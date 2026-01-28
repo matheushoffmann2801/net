@@ -1,0 +1,138 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id       Int      @id @default(autoincrement())
+  username String   @unique
+  password String
+  name     String
+  role     String   @default("USER")
+  allowedCities String @default("[]")
+  createdAt DateTime @default(now())
+  lastLogin DateTime?
+  active    Boolean   @default(true)
+  pendingRequests PendingRequest[] // Relação com solicitações pendentes
+  auditLogs AuditLog[]
+  history   History[]
+}
+
+model Technician {
+  id        Int       @id @default(autoincrement())
+  name      String
+  active    Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  history   History[]
+}
+
+model Item {
+  id              Int       @id @default(autoincrement())
+  type            String
+  brand           String
+  model           String
+  
+  // IDENTIFICADORES ÚNICOS (Evita duplicidade)
+  serial          String    @unique
+  mac             String?   @unique 
+  assetTag        String?   @unique // Patrimônio
+  fhttId          String?   @unique // ID Fiberhome (FHTT)
+  
+  supplier        String?
+  invoiceNumber   String?
+  
+  // ESTADO ATUAL
+  status          String    @default("Disponível")
+  currentLocation String    @default("Estoque Central")
+  city            String    @default("Nova Maringá")
+  
+  // DADOS DO RESPONSÁVEL ATUAL
+  currentHolder   String?   // Nome do Cliente ou Técnico
+  clientCode      String?   // Código do Cliente (Se estiver em uso)
+  
+  // CONSUMÍVEIS
+  isConsumable    Boolean   @default(false)
+  initialAmount   Float?
+  currentAmount   Float?
+  unit            String?
+  value           Float?    @default(0)
+  observations    String?   // Campo de observações gerais
+
+  photo           String?   // Foto em Base64
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  history         History[]
+}
+
+model History {
+  id           Int         @id @default(autoincrement())
+  action       String
+  description  String
+  location     String
+  origin       String?
+  destination  String?
+  notes        String?
+  clientCode   String?     // Grava o código do cliente neste histórico
+  date         DateTime    @default(now())
+  
+  item         Item        @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  itemId       Int
+  
+  technician   Technician? @relation(fields: [technicianId], references: [id])
+  technicianId Int?
+
+  user         User?       @relation(fields: [userId], references: [id])
+  userId       Int?
+}
+
+model SystemSetting {
+  id    String @id @default("general")
+  data  String
+}
+
+model Brand {
+  id     Int     @id @default(autoincrement())
+  name   String  @unique
+  models Model[]
+}
+
+model Model {
+  id      Int    @id @default(autoincrement())
+  name    String
+  brand   Brand  @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  brandId Int
+}
+
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  action    String   // Ex: CRIAR, EDITAR, EXCLUIR
+  resource  String   // Ex: Usuário, Configuração
+  details   String   // Detalhes do que mudou
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id])
+  createdAt DateTime @default(now())
+}
+
+model Role {
+  id    Int    @id @default(autoincrement())
+  name  String
+  value String @unique
+  color String @default("blue")
+}
+
+model PendingRequest {
+  id        Int      @id @default(autoincrement())
+  type      String   // 'ADD_ITEM', 'EDIT_ITEM', 'MOVE_ITEM'
+  status    String   @default("PENDING") // 'PENDING', 'APPROVED', 'REJECTED'
+  data      String   // JSON string of the item to be added or changes to be applied
+  itemId    Int?     // For EDIT_ITEM/MOVE_ITEM requests, refers to the item being edited/moved
+  userId    Int      // User who made the request
+  user      User     @relation(fields: [userId], references: [id])
+  createdAt DateTime @default(now())
+  adminNotes String? // Notas do admin ao aprovar/rejeitar
+}
