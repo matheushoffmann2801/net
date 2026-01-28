@@ -3,37 +3,63 @@ import {
   Camera, Search, Save, LogOut, Plus, Edit, X, CheckCircle, 
   ArrowLeft, ArrowRight, MapPin, QrCode, User, 
   Smartphone, Trash2, AlertTriangle, History, 
-  PenTool, Home, Wrench, ChevronRight, Signal
+  PenTool, Home, Wrench, ChevronRight, Signal, Zap
 } from 'lucide-react';
 import api from '../services/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { Scanner } from '@yudiel/react-qr-scanner';
+import Tesseract from 'tesseract.js';
 
 // --- COMPONENTES AUXILIARES ---
 
 const TabButton = ({ active, icon: Icon, label, onClick }) => (
   <button 
     onClick={onClick}
-    className={`flex flex-col items-center justify-center w-full py-3 transition-all duration-300 ${active ? 'text-blue-600 -translate-y-1' : 'text-slate-400 hover:text-slate-600'}`}
+    className={`relative flex flex-col items-center justify-center w-full py-3 transition-all duration-300 group ${active ? 'text-blue-600' : 'text-slate-400 hover:text-slate-600'}`}
   >
-    <div className={`p-1.5 rounded-full mb-1 transition-all ${active ? 'bg-blue-100' : 'bg-transparent'}`}>
+    <div className={`absolute -top-1 w-8 h-1 bg-blue-600 rounded-b-lg transition-all duration-300 ${active ? 'opacity-100' : 'opacity-0'}`}></div>
+    <div className={`p-2 rounded-2xl mb-1 transition-all duration-300 ${active ? 'bg-blue-50 -translate-y-1' : 'group-hover:bg-slate-50'}`}>
       <Icon className={`w-6 h-6 ${active ? 'fill-blue-600 text-blue-600' : ''}`} strokeWidth={active ? 2.5 : 2} />
     </div>
-    <span className="text-[10px] font-bold">{label}</span>
+    <span className={`text-[10px] font-bold transition-all ${active ? 'opacity-100' : 'opacity-70'}`}>{label}</span>
   </button>
 );
 
 const StepIndicator = ({ current, total }) => (
-  <div className="flex items-center gap-1 w-full px-4 mb-6">
-    {Array.from({ length: total }).map((_, i) => (
-      <div key={i} className="h-1.5 flex-1 rounded-full bg-slate-100 overflow-hidden">
-        <div 
-          className={`h-full bg-blue-600 transition-all duration-500 ease-out ${i + 1 <= current ? 'w-full' : 'w-0'}`}
-        />
-      </div>
-    ))}
+  <div className="w-full px-6 mb-8">
+    <div className="flex justify-between items-center relative">
+      {/* Background Line */}
+      <div className="absolute left-0 top-1/2 -translate-y-1/2 w-full h-1 bg-slate-100 rounded-full -z-10"></div>
+      
+      {/* Progress Line */}
+      <div 
+        className="absolute left-0 top-1/2 -translate-y-1/2 h-1 bg-blue-600 rounded-full -z-10 transition-all duration-500 ease-out"
+        style={{ width: `${((current - 1) / (total - 1)) * 100}%` }}
+      ></div>
+
+      {Array.from({ length: total }).map((_, i) => {
+        const stepNum = i + 1;
+        const isActive = stepNum <= current;
+        const isCurrent = stepNum === current;
+        
+        return (
+          <div key={i} className="flex flex-col items-center gap-2">
+            <div 
+              className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold border-2 transition-all duration-300 ${
+                isActive 
+                  ? 'bg-blue-600 border-blue-600 text-white shadow-lg shadow-blue-200 scale-110' 
+                  : 'bg-white border-slate-200 text-slate-400'
+              }`}
+            >
+              {isActive ? <CheckCircle size={14} className={isCurrent ? "hidden" : "block"} /> : stepNum}
+            </div>
+            {isCurrent && <span className="absolute -bottom-6 text-[10px] font-bold text-blue-600 whitespace-nowrap animate-in fade-in slide-in-from-top-1">Passo {stepNum}</span>}
+          </div>
+        );
+      })}
+    </div>
   </div>
 );
 
@@ -63,6 +89,185 @@ const compressImage = (file) => {
   });
 };
 
+// --- COMPONENTE DE OCR ---
+const OcrScannerModal = ({ onClose, onScanSuccess }) => {
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const [processing, setProcessing] = useState(false);
+  const [torchOn, setTorchOn] = useState(false);
+  const streamRef = useRef(null);
+
+  useEffect(() => {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      toast.error("Câmera bloqueada! Use HTTPS ou localhost.");
+      onClose();
+      return;
+    }
+    // Inicia a câmera com resolução melhor para OCR
+    navigator.mediaDevices.getUserMedia({ 
+      video: { 
+        facingMode: 'environment', 
+        width: { ideal: 1920 }, 
+        height: { ideal: 1080 },
+        focusMode: 'continuous'
+      } 
+    })
+      .then(s => {
+        streamRef.current = s;
+        if (videoRef.current) videoRef.current.srcObject = s;
+      })
+      .catch(() => { toast.error("Câmera não acessível."); onClose(); });
+
+    // Limpeza ao desmontar
+    return () => streamRef.current?.getTracks().forEach(track => track.stop());
+  }, []);
+
+  const toggleTorch = () => {
+    const track = streamRef.current?.getVideoTracks()[0];
+    if (track) {
+      const capabilities = track.getCapabilities();
+      if (capabilities.torch) {
+        track.applyConstraints({ advanced: [{ torch: !torchOn }] })
+          .then(() => setTorchOn(!torchOn))
+          .catch(() => toast.error("Erro ao alternar flash"));
+      } else {
+        toast.error("Flash não disponível");
+      }
+    }
+  };
+
+  const handleCapture = async () => {
+    if (!videoRef.current) return;
+    setProcessing(true);
+    toast.loading('Analisando imagem...', { id: 'ocr' });
+
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    const context = canvas.getContext('2d');
+
+    // Dimensões do vídeo
+    const width = video.videoWidth;
+    const height = video.videoHeight;
+
+    if (width === 0 || height === 0) {
+        setProcessing(false);
+        return;
+    }
+
+    // CROP: Foca apenas na área central (onde está o retângulo guia)
+    // O guia visual é w-4/5 (80%) e h-1/4 (25%)
+    const cropWidth = width * 0.8;
+    const cropHeight = height * 0.25;
+    const startX = (width - cropWidth) / 2;
+    const startY = (height - cropHeight) / 2;
+
+    // UPSCALE: Aumenta a resolução para ajudar o OCR em textos manuscritos
+    const scale = 2.0; // Ajustado para 2.0 para ganhar performance sem perder precisão
+    canvas.width = cropWidth * scale;
+    canvas.height = cropHeight * scale;
+
+    // Desenha apenas a parte recortada no canvas
+    context.drawImage(video, startX, startY, cropWidth, cropHeight, 0, 0, cropWidth * scale, cropHeight * scale);
+    
+    // Salva a imagem original (colorida) para evidência antes de aplicar filtros
+    const evidenceUrl = canvas.toDataURL('image/jpeg', 0.8);
+
+    // PRÉ-PROCESSAMENTO AVANÇADO: Normalização de Histograma (Contrast Stretching)
+    const imgData = context.getImageData(0, 0, canvas.width, canvas.height);
+    const d = imgData.data;
+    
+    // 1. Encontrar Min e Max de luminosidade na imagem (para esticar o contraste)
+    let min = 255;
+    let max = 0;
+    const grayBuffer = new Uint8Array(d.length / 4); // Buffer auxiliar
+
+    for (let i = 0; i < d.length; i += 4) {
+        const r = d[i];
+        const g = d[i+1];
+        const b = d[i+2];
+        // Luminosidade
+        const v = 0.2126*r + 0.7152*g + 0.0722*b;
+        grayBuffer[i/4] = v;
+        if (v < min) min = v;
+        if (v > max) max = v;
+    }
+
+    // Evita divisão por zero
+    if (max === min) max = min + 1;
+
+    // 2. Aplicar Normalização e Binarização Suave
+    for (let i = 0; i < d.length; i += 4) {
+        let v = grayBuffer[i/4];
+        
+        // Estica o contraste: O pixel mais escuro vira 0, o mais claro vira 255
+        v = ((v - min) * 255) / (max - min);
+        
+        // Binarização Suave (Mantém bordas para o OCR entender melhor o traço)
+        if (v < 80) v = 0;         // Preto absoluto para tinta forte
+        else if (v > 180) v = 255; // Branco absoluto para fundo
+        // Valores entre 80 e 180 mantêm tons de cinza (anti-aliasing natural)
+
+        d[i] = d[i+1] = d[i+2] = v;
+    }
+    context.putImageData(imgData, 0, 0);
+
+    const imageDataUrl = canvas.toDataURL('image/png');
+
+    try {
+      // Usa 'eng' pois é mais leve e números são universais.
+      // Adiciona whitelist para forçar apenas números (ajuda a não confundir I com 1, etc)
+      const { data: { text } } = await Tesseract.recognize(imageDataUrl, 'eng', {
+        tessedit_char_whitelist: '0123456789'
+      });
+      
+      // Limpeza básica de erros comuns de OCR em números (O -> 0, I/l -> 1)
+      const cleanText = text.toUpperCase().replace(/O/g, '0').replace(/[IL]/g, '1');
+
+      // Procura por qualquer sequência numérica
+      const matches = cleanText.match(/\d+/g);
+
+      if (matches && matches.length > 0) {
+        // Filtra candidatos: Patrimônios geralmente são curtos (até 4 dígitos)
+        // Ignora números muito longos que provavelmente são Seriais ou Telefones
+        const candidates = matches.filter(m => m.length >= 1 && m.length <= 4);
+
+        if (candidates.length > 0) {
+           // Pega o maior número dentro do range aceitável (ex: prefere 1234 a 1)
+           const foundPatrimony = candidates.sort((a,b) => b.length - a.length)[0];
+           onScanSuccess(foundPatrimony, evidenceUrl);
+           toast.success(`Patrimônio: ${foundPatrimony}`, { id: 'ocr' });
+        } else {
+           toast.error("Nenhum número curto (até 5 dígitos) encontrado.", { id: 'ocr' });
+        }
+      } else {
+        toast.error("Texto não reconhecido. Tente focar melhor ou aproximar.", { id: 'ocr' });
+      }
+    } catch (error) {
+      console.error(error);
+      toast.error("Erro ao processar imagem.", { id: 'ocr' });
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black z-50 flex flex-col animate-in fade-in duration-300">
+      <div className="flex-1 relative bg-black">
+        <video ref={videoRef} autoPlay playsInline className="w-full h-full object-contain"></video>
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none"><div className="w-4/5 h-1/4 border-4 border-dashed border-white/50 rounded-lg"></div></div>
+        <canvas ref={canvasRef} className="hidden"></canvas>
+      </div>
+      <div className="p-4 bg-slate-900 flex gap-4 items-center">
+        <button onClick={toggleTorch} className={`p-4 rounded-lg font-bold transition-colors ${torchOn ? 'bg-yellow-500 text-black' : 'bg-slate-700 text-white'}`}>
+          <Zap size={24} className={torchOn ? "fill-black" : ""} />
+        </button>
+        <button onClick={onClose} className="flex-1 bg-slate-700 text-white py-4 rounded-lg font-bold">Cancelar</button>
+        <button onClick={handleCapture} disabled={processing} className="flex-1 bg-blue-600 text-white py-4 rounded-lg font-bold disabled:bg-slate-500">{processing ? 'Analisando...' : 'Capturar'}</button>
+      </div>
+    </div>
+  );
+};
+
 export default function TechDashboard() {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
@@ -74,6 +279,7 @@ export default function TechDashboard() {
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [myRequests, setMyRequests] = useState([]);
+  const lastScanErrorRef = useRef(0);
   
   // Formulários e Dados
   const [installData, setInstallData] = useState(() => {
@@ -87,6 +293,7 @@ export default function TechDashboard() {
 
   // Auxiliares
   const [isScanning, setIsScanning] = useState(null);
+  const [isOcrActive, setIsOcrActive] = useState(false);
   const [brands, setBrands] = useState([]);
   const [models, setModels] = useState([]);
   const [newItem, setNewItem] = useState({ brandId: '', modelId: '', serial: '', patrimony: '', mac: '', type: 'onu' });
@@ -190,48 +397,81 @@ export default function TechDashboard() {
 
   // 1. HOME VIEW
   const renderHome = () => (
-    <div className="p-4 space-y-6 animate-in fade-in duration-500">
-      <div className="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-3xl p-6 text-white shadow-xl shadow-blue-500/20 relative overflow-hidden">
-        <div className="absolute top-0 right-0 p-4 opacity-10"><Signal size={120} /></div>
-        <div className="relative z-10">
-          <p className="text-blue-100 text-sm font-medium mb-1">Bem-vindo,</p>
-          <h2 className="text-2xl font-bold mb-4">{user?.name || 'Técnico'}</h2>
-          <div className="flex gap-3">
-            <button onClick={() => { setView('install'); setStep(1); vibrate(); }} className="flex-1 bg-white/10 backdrop-blur-md border border-white/20 p-3 rounded-xl flex items-center justify-center gap-2 hover:bg-white/20 transition-all active:scale-95">
-              <Plus size={20} /> Nova Instalação
-            </button>
-            <button onClick={() => { setView('conference'); vibrate(); }} className="flex-1 bg-white text-blue-700 p-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-blue-50 transition-all active:scale-95 shadow-lg">
-              <Search size={20} /> Consultar
-            </button>
+    <div className="p-4 space-y-6 pb-24 animate-in fade-in duration-500 max-w-2xl mx-auto">
+      {/* Welcome Card */}
+      <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-3xl p-6 text-white shadow-2xl shadow-slate-200 relative overflow-hidden">
+        <div className="absolute top-0 right-0 p-4 opacity-5"><Signal size={180} /></div>
+        <div className="relative z-10 flex items-center justify-between">
+          <div>
+            <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-1">Painel do Técnico</p>
+            <h2 className="text-3xl font-bold mb-1">{user?.name?.split(' ')[0] || 'Técnico'}</h2>
+            <p className="text-slate-400 text-sm flex items-center gap-1"><MapPin size={12}/> {user?.allowedCities?.[0] || 'Em Campo'}</p>
           </div>
+          <div className="w-12 h-12 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center border border-white/10">
+            <User className="text-white" size={24} />
+          </div>
+        </div>
+        
+        <div className="mt-8 grid grid-cols-2 gap-3">
+           <button onClick={() => { setView('install'); setStep(1); vibrate(); }} className="bg-blue-600 hover:bg-blue-500 text-white p-4 rounded-2xl flex flex-col items-center gap-2 transition-all active:scale-95 shadow-lg shadow-blue-900/20 group">
+              <div className="p-2 bg-white/20 rounded-full group-hover:bg-white/30 transition-colors"><Plus size={24} /></div>
+              <span className="font-bold text-sm">Nova Instalação</span>
+           </button>
+           <button onClick={() => { setView('conference'); vibrate(); }} className="bg-white/10 hover:bg-white/20 text-white p-4 rounded-2xl flex flex-col items-center gap-2 transition-all active:scale-95 backdrop-blur-sm border border-white/5">
+              <div className="p-2 bg-white/10 rounded-full"><Search size={24} /></div>
+              <span className="font-bold text-sm">Consultar</span>
+           </button>
         </div>
       </div>
 
-      <div>
-        <div className="flex justify-between items-center mb-4">
-          <h3 className="font-bold text-slate-800">Atividades Recentes</h3>
-          <span className="text-xs text-slate-400 bg-slate-100 px-2 py-1 rounded-full">{myRequests.length} total</span>
+      {/* Stats Row */}
+      <div className="grid grid-cols-3 gap-3">
+        <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 text-center">
+           <p className="text-2xl font-bold text-slate-800">{myRequests.filter(r => r.type === 'INSTALLATION').length}</p>
+           <p className="text-[10px] text-slate-400 font-bold uppercase">Instalações</p>
         </div>
+        <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 text-center">
+           <p className="text-2xl font-bold text-slate-800">{myRequests.filter(r => r.status === 'PENDING').length}</p>
+           <p className="text-[10px] text-slate-400 font-bold uppercase">Pendentes</p>
+        </div>
+        <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 text-center">
+           <p className="text-2xl font-bold text-green-600">{myRequests.filter(r => r.status === 'APPROVED').length}</p>
+           <p className="text-[10px] text-slate-400 font-bold uppercase">Aprovados</p>
+        </div>
+      </div>
+
+      {/* Recent Activity */}
+      <div>
+        <div className="flex justify-between items-center mb-4 px-1">
+          <h3 className="font-bold text-slate-800 text-lg">Histórico Recente</h3>
+        </div>
+        
         {myRequests.length === 0 ? (
-          <div className="text-center py-10 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
-            <History className="w-10 h-10 text-slate-300 mx-auto mb-2"/>
-            <p className="text-slate-400 text-sm">Nenhuma atividade hoje.</p>
+          <div className="flex flex-col items-center justify-center py-12 text-slate-400 bg-white rounded-3xl border border-dashed border-slate-200">
+            <History size={48} className="mb-3 opacity-20"/>
+            <p className="text-sm font-medium">Nenhuma atividade registrada hoje.</p>
           </div>
         ) : (
           <div className="space-y-3">
-            {myRequests.slice(0, 5).map(req => (
-              <div key={req.id} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center justify-between active:scale-[0.98] transition-transform">
+            {myRequests.slice(0, 10).map((req, i) => (
+              <div key={req.id} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center justify-between active:scale-[0.98] transition-transform" style={{animationDelay: `${i * 50}ms`}}>
                 <div className="flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center ${req.type === 'INSTALLATION' ? 'bg-green-100 text-green-600' : 'bg-blue-100 text-blue-600'}`}>
-                    {req.type === 'INSTALLATION' ? <Home size={18}/> : <Wrench size={18}/>}
+                  <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-sm ${req.type === 'INSTALLATION' ? 'bg-green-50 text-green-600' : 'bg-blue-50 text-blue-600'}`}>
+                    {req.type === 'INSTALLATION' ? <Home size={20}/> : <Wrench size={20}/>}
                   </div>
                   <div>
-                    <p className="font-bold text-slate-700 text-sm">{req.type === 'INSTALLATION' ? 'Instalação' : 'Movimentação'}</p>
-                    <p className="text-xs text-slate-400">ID: #{req.id}</p>
+                    <p className="font-bold text-slate-800 text-sm">{req.type === 'INSTALLATION' ? 'Instalação Residencial' : 'Movimentação de Item'}</p>
+                    <p className="text-xs text-slate-400 mt-0.5 flex items-center gap-1">
+                       <History size={10}/> {new Date(req.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} • ID #{req.id}
+                    </p>
                   </div>
                 </div>
-                <div className={`px-2 py-1 rounded-lg text-xs font-bold ${req.status === 'PENDING' ? 'bg-yellow-100 text-yellow-700' : req.status === 'APPROVED' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                  {req.status === 'PENDING' ? 'Pendente' : req.status === 'APPROVED' ? 'Aprovado' : 'Recusado'}
+                <div className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide ${
+                  req.status === 'PENDING' ? 'bg-yellow-50 text-yellow-600 border border-yellow-100' : 
+                  req.status === 'APPROVED' ? 'bg-green-50 text-green-600 border border-green-100' : 
+                  'bg-red-50 text-red-600 border border-red-100'
+                }`}>
+                  {req.status === 'PENDING' ? 'Análise' : req.status === 'APPROVED' ? 'Feito' : 'Negado'}
                 </div>
               </div>
             ))}
@@ -244,7 +484,7 @@ export default function TechDashboard() {
   // 2. INSTALLATION WIZARD
   const renderInstallWizard = () => (
     <div className="flex flex-col h-full bg-slate-50">
-      <div className="bg-white border-b border-slate-100 p-4 sticky top-0 z-10 flex items-center gap-3">
+      <div className="bg-white border-b border-slate-100 p-4 sticky top-0 z-10 flex items-center gap-3 shadow-sm">
         <button onClick={() => step > 1 ? setStep(s => s - 1) : setView('home')} className="p-2 rounded-full hover:bg-slate-100"><ArrowLeft size={20} className="text-slate-600"/></button>
         <div className="flex-1">
           <h2 className="font-bold text-slate-800">Nova Instalação</h2>
@@ -252,7 +492,7 @@ export default function TechDashboard() {
         </div>
       </div>
       
-      <div className="flex-1 overflow-y-auto pb-24 pt-4">
+      <div className="flex-1 overflow-y-auto pb-32 pt-6">
         <StepIndicator current={step} total={4} />
 
         {/* STEP 1: CLIENTE */}
@@ -260,13 +500,22 @@ export default function TechDashboard() {
           <div className="px-4 space-y-4 animate-in slide-in-from-right duration-300">
             <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 space-y-4">
               <div className="flex items-center gap-2 mb-2"><User className="text-blue-500" size={20}/> <h3 className="font-bold text-slate-700">Dados do Cliente</h3></div>
-              <input className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3.5 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all" 
-                placeholder="Nome Completo" value={installData.clientName} onChange={e => setInstallData({...installData, clientName: e.target.value})} />
-              <input className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3.5 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all" 
-                placeholder="Código PPPoE / Cliente" value={installData.clientCode} onChange={e => setInstallData({...installData, clientCode: e.target.value})} />
-              <textarea className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3.5 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all" 
-                rows="3" placeholder="Endereço Completo" value={installData.address} onChange={e => setInstallData({...installData, address: e.target.value})} />
               
+              <div className="space-y-3">
+                <div className="relative">
+                  <span className="absolute left-3 top-3.5 text-slate-400 text-xs font-bold uppercase">Nome</span>
+                  <input className="w-full bg-slate-50 border border-slate-200 rounded-xl pt-8 pb-3 px-3 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-medium" 
+                    placeholder="Ex: João Silva" value={installData.clientName} onChange={e => setInstallData({...installData, clientName: e.target.value})} />
+                </div>
+                <div className="relative">
+                  <span className="absolute left-3 top-3.5 text-slate-400 text-xs font-bold uppercase">PPPoE</span>
+                  <input className="w-full bg-slate-50 border border-slate-200 rounded-xl pt-8 pb-3 px-3 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-medium" 
+                    placeholder="Ex: joao.silva" value={installData.clientCode} onChange={e => setInstallData({...installData, clientCode: e.target.value})} />
+                </div>
+                <textarea className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3.5 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all min-h-[100px]" 
+                  placeholder="Endereço Completo..." value={installData.address} onChange={e => setInstallData({...installData, address: e.target.value})} />
+              </div>
+
               <button onClick={handleGetLocation} className={`w-full py-4 rounded-xl font-bold flex items-center justify-center gap-2 border transition-all ${installData.coords ? 'bg-green-50 border-green-200 text-green-700' : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'}`}>
                 <MapPin size={20} className={installData.coords ? "text-green-600" : "text-slate-400"}/> 
                 {installData.coords ? "Localização Salva" : "Capturar GPS"}
@@ -310,16 +559,19 @@ export default function TechDashboard() {
               </select>
 
               <div className="relative">
-                <input className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 pr-12 outline-none font-mono uppercase placeholder:normal-case" placeholder="Serial Number" value={newItem.serial} onChange={e => setNewItem({...newItem, serial: e.target.value})} />
+                <input id="serialInput" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3.5 pr-12 outline-none font-mono uppercase placeholder:normal-case focus:border-blue-500 transition-colors" placeholder="Serial Number" value={newItem.serial} onChange={e => setNewItem({...newItem, serial: e.target.value})} />
                 <button onClick={() => setIsScanning('serial')} className="absolute right-2 top-2 p-1.5 bg-slate-200 rounded-lg text-slate-600"><QrCode size={18}/></button>
               </div>
 
               <div className="relative">
-                <input className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 pr-12 outline-none font-mono uppercase placeholder:normal-case" placeholder="MAC (Opcional)" value={newItem.mac} onChange={e => setNewItem({...newItem, mac: e.target.value})} />
+                <input id="macInput" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3.5 pr-12 outline-none font-mono uppercase placeholder:normal-case focus:border-blue-500 transition-colors" placeholder="MAC (Opcional)" value={newItem.mac} onChange={e => setNewItem({...newItem, mac: e.target.value})} />
                 <button onClick={() => setIsScanning('mac')} className="absolute right-2 top-2 p-1.5 bg-slate-200 rounded-lg text-slate-600"><QrCode size={18}/></button>
               </div>
 
-              <input className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 outline-none font-mono uppercase placeholder:normal-case" placeholder="Patrimônio (Obrigatório)" value={newItem.patrimony} onChange={e => setNewItem({...newItem, patrimony: e.target.value})} />
+              <div className="relative">
+                <input className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3.5 pr-12 outline-none font-mono uppercase placeholder:normal-case focus:border-blue-500 transition-colors" placeholder="Patrimônio (Obrigatório)" value={newItem.patrimony} onChange={e => setNewItem({...newItem, patrimony: e.target.value})} />
+                <button onClick={() => setIsOcrActive(true)} className="absolute right-2 top-2 p-1.5 bg-slate-200 rounded-lg text-slate-600"><Camera size={18}/></button>
+              </div>
               
               <button onClick={handleAddItem} className="w-full bg-slate-800 text-white py-3.5 rounded-xl font-bold flex items-center justify-center gap-2 active:scale-95 transition-transform">
                 <Plus size={18}/> Adicionar Item
@@ -401,7 +653,7 @@ export default function TechDashboard() {
         )}
       </div>
 
-      <div className="fixed bottom-0 left-0 w-full bg-white border-t border-slate-100 p-4 z-20 flex justify-between items-center">
+      <div className="fixed bottom-0 left-0 w-full bg-white border-t border-slate-100 p-4 z-20 flex justify-between items-center shadow-[0_-5px_20px_rgba(0,0,0,0.05)]">
          <button disabled={step === 1} onClick={() => setStep(s => s - 1)} className="px-6 py-2 text-slate-500 font-bold disabled:opacity-30">Voltar</button>
          {step < 4 && (
            <button onClick={() => {
@@ -421,7 +673,7 @@ export default function TechDashboard() {
     <div className="h-screen bg-slate-50 flex flex-col font-sans overflow-hidden">
       {/* HEADER GERAL (Só aparece se não estiver no Wizard) */}
       {view !== 'install' && (
-        <div className="bg-white border-b border-slate-100 px-4 py-3 flex justify-between items-center sticky top-0 z-10">
+        <div className="bg-white border-b border-slate-100 px-4 py-3 flex justify-between items-center sticky top-0 z-10 shadow-sm">
           <div className="flex items-center gap-2">
             <div className="bg-blue-600 p-1.5 rounded-lg"><Wrench className="text-white w-5 h-5"/></div>
             <h1 className="font-bold text-slate-800 text-lg tracking-tight">NetControl</h1>
@@ -463,7 +715,7 @@ export default function TechDashboard() {
 
       {/* BOTTOM NAVIGATION (Só na Home) */}
       {view === 'home' && (
-        <div className="bg-white border-t border-slate-100 pb-safe pt-2 px-6 flex justify-between items-center z-20 shadow-[0_-5px_15px_rgba(0,0,0,0.02)]">
+        <div className="bg-white border-t border-slate-100 pb-safe pt-2 px-6 flex justify-between items-center z-20 shadow-[0_-5px_20px_rgba(0,0,0,0.05)]">
           <TabButton active={view === 'home'} icon={Home} label="Início" onClick={() => setView('home')} />
           <div className="w-px h-8 bg-slate-100 mx-2"></div>
           <TabButton active={false} icon={Search} label="Buscar" onClick={() => { setView('conference'); vibrate(); }} />
@@ -472,29 +724,107 @@ export default function TechDashboard() {
         </div>
       )}
 
+      {/* OCR SCANNER MODAL */}
+      {isOcrActive && (
+        <OcrScannerModal 
+          onClose={() => setIsOcrActive(false)}
+          onScanSuccess={(patrimony, evidencePhoto) => {
+            setNewItem(prev => ({...prev, patrimony: patrimony.toUpperCase()}));
+            if (evidencePhoto) {
+               setInstallData(prev => ({...prev, photos: [...prev.photos, evidencePhoto]}));
+               toast.success("Foto salva como evidência!");
+            }
+            setIsOcrActive(false);
+          }}
+        />
+      )}
+
       {/* SCANNER OVERLAY */}
       {isScanning && (
         <div className="fixed inset-0 bg-black z-50 flex flex-col animate-in fade-in duration-300">
           <div className="flex-1 relative">
-            <Scanner onScan={(res) => {
+            <Scanner 
+              formats={
+                (isScanning === 'mac') 
+                  ? ['code_128', 'code_39', 'code_93', 'codabar', 'itf', 'ean_13'] 
+                  : ['qr_code', 'code_128', 'code_39', 'ean_13', 'data_matrix', 'codabar', 'code_93', 'itf']
+              }
+              components={{ torch: true, audio: false }}
+              constraints={{ facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 }, focusMode: 'continuous' }}
+              scanDelay={200}
+              onError={(error) => console.warn("Erro Scanner:", error)}
+              onScan={(res) => {
               if (res && res.length > 0) {
                  const code = res[0].rawValue;
-                 vibrate();
-                 if (isScanning === 'serial') setNewItem(prev => ({...prev, serial: code}));
-                 if (isScanning === 'mac') setNewItem(prev => ({...prev, mac: code}));
-                 setIsScanning(null);
-                 toast.success("Código lido!");
+                 
+                 // Validação Inteligente
+                 if (isScanning === 'mac') {
+                    // Remove separadores e valida hex
+                    const clean = code.replace(/[^0-9A-Fa-f]/g, '').toUpperCase();
+                    if (clean.length === 12) {
+                       const formatted = clean.match(/.{1,2}/g).join(':');
+                       vibrate();
+                       setNewItem(prev => ({...prev, mac: formatted}));
+                       setIsScanning(null);
+                       toast.success("MAC lido com sucesso!");
+                    }
+                 } 
+                 else if (isScanning === 'serial') {
+                    const clean = code.trim().toUpperCase();
+                    
+                    // Verifica se parece MAC (12 hex) para evitar leitura errada
+                    // Heurística: É MAC se tem 12 chars hex E contém letras (A-F). Se for só números, assumimos que é Serial.
+                    const hexOnly = clean.replace(/[^0-9A-F]/g, '');
+                    const isMacLike = /^[0-9A-F]{12}$/.test(hexOnly) && /[A-F]/.test(hexOnly);
+                    
+                    // Prefixos comuns de ONU
+                    const isKnownSerial = clean.includes('FHTT') || clean.includes('ZTEG') || clean.includes('ALCL') || clean.includes('HWTC');
+
+                    if (isKnownSerial) {
+                       vibrate();
+                       setNewItem(prev => ({...prev, serial: clean}));
+                       setIsScanning(null);
+                       toast.success("Serial identificado!");
+                       return;
+                    }
+
+                    // Se parece MAC e não é serial conhecido, avisa o usuário (Feedback visual)
+                    if (isMacLike) {
+                       const now = Date.now();
+                       if (now - lastScanErrorRef.current > 2000) {
+                          toast.error("Parece um MAC. Aponte para o Serial.", { id: 'scan-warn' });
+                          lastScanErrorRef.current = now;
+                       }
+                       return;
+                    }
+
+                    // Caso genérico
+                    if (clean.length > 5) {
+                       vibrate();
+                       setNewItem(prev => ({...prev, serial: clean}));
+                       setIsScanning(null);
+                       toast.success("Serial lido!");
+                    }
+                 }
               }
             }} />
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <div className="w-64 h-64 border-2 border-blue-500 rounded-2xl relative shadow-[0_0_0_100vh_rgba(0,0,0,0.7)]">
-                <div className="absolute top-2 left-0 w-full text-center text-white font-bold drop-shadow-md">
+              <div className="w-80 h-32 border-2 border-blue-500 rounded-xl relative shadow-[0_0_0_100vh_rgba(0,0,0,0.7)]">
+                <div className="absolute -top-16 left-0 w-full text-center text-white font-bold drop-shadow-md text-lg">
                    {isScanning === 'mac' ? 'Aponte para o MAC' : 'Aponte para o Serial'}
                 </div>
+                <div className="absolute -bottom-8 left-0 w-full text-center text-white/80 text-xs animate-pulse">Lendo câmera...</div>
+                <div className="absolute top-1/2 left-4 right-4 h-0.5 bg-red-500/80 shadow-[0_0_8px_rgba(239,68,68,0.8)]"></div>
               </div>
             </div>
           </div>
-          <button onClick={() => setIsScanning(null)} className="bg-slate-900 text-white py-6 font-bold">Cancelar</button>
+          <div className="flex bg-slate-900">
+            <button onClick={() => setIsScanning(null)} className="flex-1 text-white py-6 font-bold border-r border-slate-800">Cancelar</button>
+            <button onClick={() => { 
+              const type = isScanning; setIsScanning(null); 
+              setTimeout(() => document.getElementById(type === 'mac' ? 'macInput' : 'serialInput')?.focus(), 100); 
+            }} className="flex-1 text-blue-400 py-6 font-bold">Digitar Manual</button>
+          </div>
         </div>
       )}
     </div>

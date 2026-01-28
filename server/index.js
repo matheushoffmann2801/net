@@ -417,7 +417,7 @@ app.post("/api/settings", authenticate, async (req, res) => {
 
 app.get("/api/items", authenticate, async (req, res) => {
   try {
-    const { page = 1, limit = 50, search = '', status = 'all', city = 'Todas', type = 'equipamentos', sort, order } = req.query;
+    const { page = 1, limit = 50, search = '', status = 'all', city = 'Todas', type = 'equipamentos', sort, order, client } = req.query;
     
     const pageNum = Number(page);
     const limitNum = Number(limit);
@@ -443,6 +443,11 @@ app.get("/api/items", authenticate, async (req, res) => {
     // Filtro de Cidade (Assumindo que você adicionou 'city' no schema)
     if (city !== 'Todas') {
       where.city = city;
+    }
+
+    // Filtro de Cliente
+    if (client) {
+      where.currentHolder = { contains: client };
     }
 
     // Filtro de Tipo (Material vs Equipamento)

@@ -1,383 +1,470 @@
-import React, { useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
-  Server, User, Box, Search, Plus, History, Printer,
-  ArrowRightLeft, Edit, Trash2, MapPin, X, Package, Calendar, Loader2,
-  ChevronLeft, ChevronRight
+  Search, Plus, Download, 
+  Box, Wifi, Activity, 
+  MapPin, Trash2, Edit3, 
+  History, Package, Cpu, Cable,
+  X, Eye, User, Clock, Image as ImageIcon, FileText
 } from 'lucide-react';
+import api from '../services/api';
+import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
-import { createPortal } from 'react-dom';
-import { useVirtualizer } from '@tanstack/react-virtual';
-import PermissionGate from '../components/PermissionGate';
-import { useInventoryLogic } from '../hooks/useInventoryLogic';
+import { useAuth } from '../contexts/AuthContext';
+
+// --- COMPONENTES VISUAIS ---
 
 const StatusBadge = ({ status }) => {
   const styles = {
-    'disponivel': 'bg-blue-100 text-blue-700 border-blue-200', // Estoque
-    'em_uso': 'bg-green-100 text-green-700 border-green-200', // Comodato
-    'manutencao': 'bg-red-100 text-red-700 border-red-200', // Defeito
-    'extraviado': 'bg-gray-800 text-white border-gray-600',
-    'baixado': 'bg-gray-100 text-gray-700 border-gray-200',
+    disponivel: 'bg-green-100 text-green-700 border-green-200',
+    em_uso: 'bg-blue-100 text-blue-700 border-blue-200',
+    manutencao: 'bg-orange-100 text-orange-700 border-orange-200',
+    baixado: 'bg-gray-100 text-gray-600 border-gray-200',
+    extraviado: 'bg-red-100 text-red-700 border-red-200'
   };
-  const label = status ? status.replace('_', ' ').toUpperCase() : 'N/A';
+
+  const labels = {
+    disponivel: 'Disponível',
+    em_uso: 'Em Uso / Cliente',
+    manutencao: 'Manutenção',
+    baixado: 'Baixado',
+    extraviado: 'Extraviado'
+  };
+
   return (
-    <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${styles[status] || 'bg-gray-100 text-gray-700'}`}>
-      {label}
+    <span className={`px-2.5 py-1 rounded-full text-xs font-bold border ${styles[status] || styles.baixado} flex items-center gap-1 w-fit`}>
+      <div className="w-1.5 h-1.5 rounded-full bg-current" />
+      {labels[status] || status}
     </span>
   );
 };
 
-const TableSkeleton = () => (
-  <>
-    {[1, 2, 3, 4, 5].map((i) => (
-      <tr key={i} className="animate-pulse border-b border-slate-100">
-        <td className="p-4"><div className="h-4 bg-slate-200 rounded w-32 mb-2"></div><div className="h-3 bg-slate-100 rounded w-20"></div></td>
-        <td className="p-4"><div className="h-4 bg-slate-200 rounded w-32"></div></td>
-        <td className="p-4"><div className="h-4 bg-slate-200 rounded w-24"></div></td>
-        <td className="p-4"><div className="h-6 bg-slate-200 rounded-full w-20"></div></td>
-        <td className="p-4 text-right"><div className="h-8 bg-slate-200 rounded w-24 ml-auto"></div></td>
-      </tr>
-    ))}
-  </>
+const StatCard = ({ title, value, icon: Icon, color, subtext }) => (
+  <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow">
+    <div className="flex justify-between items-start mb-2">
+      <div className={`p-2.5 rounded-xl ${color}`}>
+        <Icon size={20} />
+      </div>
+      {subtext && <span className="text-xs font-medium text-slate-400 bg-slate-50 px-2 py-1 rounded-lg">{subtext}</span>}
+    </div>
+    <h3 className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">{title}</h3>
+    <p className="text-2xl font-bold text-slate-800">{value}</p>
+  </div>
 );
+
+// --- MODAL DE DETALHES ---
+const ItemDetailsModal = ({ item, onClose }) => {
+  const [history, setHistory] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api.get(`/items/${item.id}/history`)
+      .then(res => setHistory(res.data))
+      .catch(() => toast.error("Erro ao carregar histórico"))
+      .finally(() => setLoading(false));
+  }, [item]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+        
+        {/* Header */}
+        <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-xl bg-white border border-slate-200 flex items-center justify-center shadow-sm">
+              {item.type === 'onu' ? <Wifi className="text-blue-500"/> : <Box className="text-slate-500"/>}
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-slate-800">{item.brand} {item.model}</h2>
+              <div className="flex items-center gap-2 text-sm text-slate-500">
+                <span className="font-mono bg-slate-200 px-1.5 rounded text-slate-700">{item.serial}</span>
+                <span>•</span>
+                <span>{item.assetTag}</span>
+              </div>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors">
+            <X size={24} className="text-slate-500"/>
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            
+            {/* Coluna Esquerda: Info e Foto */}
+            <div className="space-y-6">
+              <div className="aspect-square bg-slate-100 rounded-2xl border border-slate-200 flex items-center justify-center overflow-hidden relative group">
+                {item.photo ? (
+                  <img src={item.photo} alt="Item" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
+                ) : (
+                  <div className="text-center text-slate-400">
+                    <ImageIcon size={48} className="mx-auto mb-2 opacity-50"/>
+                    <span className="text-sm">Sem foto</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="bg-slate-50 rounded-xl p-4 border border-slate-100 space-y-3">
+                <h3 className="font-bold text-slate-700 text-sm flex items-center gap-2">
+                  <FileText size={16}/> Detalhes Técnicos
+                </h3>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between"><span className="text-slate-500">Status:</span> <StatusBadge status={item.status}/></div>
+                  <div className="flex justify-between"><span className="text-slate-500">Local:</span> <span className="font-medium text-slate-700">{item.location}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-500">Cidade:</span> <span className="font-medium text-slate-700">{item.city}</span></div>
+                  {item.clientName && (
+                    <div className="pt-2 border-t border-slate-200 mt-2">
+                      <span className="block text-xs text-slate-400 mb-1">Cliente Atual</span>
+                      <div className="font-bold text-slate-800 flex items-center gap-2">
+                        <User size={14}/> {item.clientName}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Coluna Direita: Histórico */}
+            <div className="md:col-span-2">
+              <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
+                <History size={20} className="text-blue-600"/> Histórico Completo
+              </h3>
+              
+              {loading ? (
+                <div className="flex justify-center py-10"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div></div>
+              ) : history.length === 0 ? (
+                <div className="text-center py-10 bg-slate-50 rounded-xl border border-dashed border-slate-200 text-slate-400">
+                  Nenhum registro encontrado.
+                </div>
+              ) : (
+                <div className="relative pl-4 border-l-2 border-slate-100 space-y-8">
+                  {history.map((h, i) => (
+                    <div key={i} className="relative animate-in slide-in-from-bottom-2 duration-500" style={{animationDelay: `${i*50}ms`}}>
+                      <div className="absolute -left-[21px] top-0 w-4 h-4 rounded-full bg-blue-100 border-2 border-blue-500"></div>
+                      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-1 mb-1">
+                        <span className="font-bold text-slate-700 text-sm">{h.action}</span>
+                        <span className="text-xs text-slate-400 flex items-center gap-1">
+                          <Clock size={12}/> {new Date(h.date).toLocaleString()}
+                        </span>
+                      </div>
+                      <p className="text-sm text-slate-600 bg-slate-50 p-3 rounded-lg border border-slate-100">
+                        {h.details}
+                      </p>
+                      <div className="mt-1 flex items-center gap-2 text-xs text-slate-400">
+                        <User size={12}/> Responsável: <span className="font-medium text-slate-600">{h.user}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 export default function Inventory() {
   const navigate = useNavigate();
-  const {
-    filteredItems, loading, history, loadingHistory, currentHistory, totalHistoryPages, historyPage, indexOfFirstHistory, indexOfLastHistory,
-    selectedCity, world, setWorld, searchTerm, setSearchTerm, filterStatus, setFilterStatus, setHistoryPage,
-    showMoveModal, setShowMoveModal, showEditModal, setShowEditModal, showHistoryModal, setShowHistoryModal,
-    selectedItem, setSelectedItem, moveData, setMoveData,
-    handleViewHistory, handlePrintHistory, handleMoveItem, handleUpdateItem, handleDeleteItem
-  } = useInventoryLogic();
+  const { user } = useAuth();
+  
+  // Estados
+  const [items, setItems] = useState([]);
+  const [selectedItem, setSelectedItem] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState({ total: 0, available: 0, inUse: 0, maintenance: 0, totalValue: 0 });
+  
+  // Filtros
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [search, setSearch] = useState('');
+  const [type, setType] = useState('equipamentos'); // equipamentos, materiais, cabos
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [cityFilter, setCityFilter] = useState('Todas');
+  const [clientFilter, setClientFilter] = useState('');
 
-  // --- VIRTUALIZAÇÃO ---
-  const parentRef = useRef(null);
-  const rowVirtualizer = useVirtualizer({
-    count: filteredItems.length,
-    getScrollElement: () => parentRef.current,
-    estimateSize: () => 80, // Altura estimada da linha (px)
-    overscan: 10, // Renderiza 10 itens extras fora da tela para scroll suave
-  });
+  // Debounce da busca
+  useEffect(() => {
+    const timer = setTimeout(() => fetchItems(), 500);
+    return () => clearTimeout(timer);
+  }, [search, type, statusFilter, cityFilter, clientFilter, page]);
 
+  const fetchItems = async () => {
+    setLoading(true);
+    try {
+      const { data } = await api.get('/items', {
+        params: {
+          page,
+          limit: 10,
+          search,
+          type,
+          status: statusFilter,
+          city: cityFilter,
+          client: clientFilter
+        }
+      });
+      setItems(data.data);
+      setStats(data.stats);
+      setTotalPages(data.meta.pages);
+    } catch (error) {
+      toast.error('Erro ao carregar inventário');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm("Tem certeza que deseja excluir este item?")) return;
+    try {
+      await api.delete(`/items/${id}`, { data: { password: prompt("Confirme sua senha de admin:"), reason: "Exclusão via Web" } });
+      toast.success("Item excluído!");
+      fetchItems();
+    } catch (e) {
+      toast.error("Erro ao excluir. Verifique permissões.");
+    }
+  };
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6 animate-fade-in">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div className="p-6 max-w-[1600px] mx-auto space-y-6 animate-in fade-in duration-500">
+      
+      {selectedItem && <ItemDetailsModal item={selectedItem} onClose={() => setSelectedItem(null)} />}
+      
+      {/* HEADER & STATS */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">Inventário</h1>
-          <p className="text-slate-500 text-sm">Gerenciando <strong className="text-blue-600">{world === 'equipamentos' ? 'Equipamentos' : 'Materiais'}</strong> em {selectedCity}</p>
+          <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Gestão de Ativos</h1>
+          <p className="text-slate-500 text-sm">Controle total do inventário da rede.</p>
         </div>
-
-        <div className="bg-slate-100 p-1 rounded-lg flex">
-          <button onClick={() => setWorld('equipamentos')} className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-bold transition-all ${world === 'equipamentos' ? 'bg-white text-blue-600 shadow' : 'text-slate-500'}`}><Server className="w-4 h-4"/> Equipamentos</button>
-          <button onClick={() => setWorld('materiais')} className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-bold transition-all ${world === 'materiais' ? 'bg-white text-orange-600 shadow' : 'text-slate-500'}`}><Package className="w-4 h-4"/> Materiais</button>
+        <div className="flex gap-3">
+          <button onClick={() => navigate('/import')} className="px-4 py-2.5 bg-white border border-slate-200 text-slate-600 rounded-xl text-sm font-bold hover:bg-slate-50 transition-colors flex items-center gap-2">
+            <Download size={18}/> Importar
+          </button>
+          <button onClick={() => navigate('/items/new')} className="px-4 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all flex items-center gap-2 active:scale-95">
+            <Plus size={18}/> Novo Item
+          </button>
         </div>
       </div>
 
-      <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4">
+      {/* CARDS DE RESUMO */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <StatCard 
+          title="Itens Disponíveis" 
+          value={stats.available} 
+          icon={Box} 
+          color="bg-blue-100 text-blue-600" 
+        />
+        <StatCard 
+          title="Em Clientes" 
+          value={stats.inUse} 
+          icon={Wifi} 
+          color="bg-purple-100 text-purple-600" 
+        />
+        <StatCard 
+          title="Manutenção" 
+          value={stats.maintenance} 
+          icon={Activity} 
+          color="bg-orange-100 text-orange-600" 
+        />
+      </div>
+
+      {/* BARRA DE FILTROS E ABAS */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        
+        {/* Abas Superiores */}
+        <div className="flex border-b border-slate-100 overflow-x-auto">
+          {[
+            { id: 'equipamentos', label: 'Equipamentos', icon: Cpu },
+            { id: 'materiais', label: 'Materiais', icon: Package },
+            { id: 'cabos', label: 'Cabos & Drop', icon: Cable },
+          ].map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => { setType(tab.id); setPage(1); }}
+              className={`flex items-center gap-2 px-6 py-4 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${type === tab.id ? 'border-blue-600 text-blue-600 bg-blue-50/50' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
+            >
+              <tab.icon size={18} />
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Barra de Busca e Filtros */}
+        <div className="p-4 flex flex-col md:flex-row gap-4 items-center bg-slate-50/50">
+          <div className="relative flex-1 w-full">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
+            <input 
+              type="text" 
+              placeholder="Buscar por Serial, Patrimônio, Modelo ou Cliente..." 
+              className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
+          </div>
           
-        <div className="flex flex-col md:flex-row gap-4 justify-between bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-          <div className="flex gap-2 flex-1">
-            <div className="relative flex-1 max-w-md">
-              <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
+          <div className="flex gap-3 w-full md:w-auto overflow-x-auto pb-2 md:pb-0">
+            <div className="relative min-w-[180px]">
+              <User className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
               <input 
                 type="text" 
-                placeholder="Buscar serial, mac, cliente..." 
-                className="w-full pl-9 p-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                value={searchTerm}
-                onChange={e => setSearchTerm(e.target.value)}
+                placeholder="Filtrar Cliente..." 
+                className="w-full pl-9 pr-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm text-slate-600 outline-none focus:border-blue-500"
+                value={clientFilter}
+                onChange={e => setClientFilter(e.target.value)}
               />
             </div>
+
             <select 
-              className="border border-slate-200 rounded-lg text-sm p-2 bg-white outline-none focus:ring-2 focus:ring-blue-500"
-              value={filterStatus}
-              onChange={e => setFilterStatus(e.target.value)}
+              className="px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm text-slate-600 outline-none focus:border-blue-500 cursor-pointer"
+              value={statusFilter}
+              onChange={e => setStatusFilter(e.target.value)}
             >
               <option value="all">Todos Status</option>
               <option value="disponivel">Disponível</option>
               <option value="em_uso">Em Uso</option>
               <option value="manutencao">Manutenção</option>
             </select>
+
+            <select 
+              className="px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm text-slate-600 outline-none focus:border-blue-500 cursor-pointer"
+              value={cityFilter}
+              onChange={e => setCityFilter(e.target.value)}
+            >
+              <option value="Todas">Todas Cidades</option>
+              <option value="Nova Maringá">Nova Maringá</option>
+              <option value="Tapurah">Tapurah</option>
+              <option value="São José do Rio Claro">São José do Rio Claro</option>
+            </select>
           </div>
-          <button 
-            onClick={() => navigate('/new-item')}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-sm transition-all active:scale-95"
-          >
-            <Plus className="w-4 h-4" /> Novo Item
-          </button>
         </div>
 
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
-          {/* Container Scrollável para Virtualização */}
-          <div 
-            ref={parentRef} 
-            className="overflow-auto h-[calc(100vh-240px)] w-full"
-          >
-            <table className="w-full text-left text-sm whitespace-nowrap relative">
-              <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-xs sticky top-0 z-10 shadow-sm">
+        {/* TABELA DE DADOS */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider font-semibold border-b border-slate-200">
+                <th className="px-6 py-4">Identificação</th>
+                <th className="px-6 py-4">Localização / Cliente</th>
+                <th className="px-6 py-4">Equipamento</th>
+                <th className="px-6 py-4">Status</th>
+                <th className="px-6 py-4 text-center">Ações</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {loading ? (
+                // SKELETON LOADING
+                [...Array(5)].map((_, i) => (
+                  <tr key={i} className="animate-pulse">
+                    <td className="px-6 py-4"><div className="h-4 w-24 bg-slate-200 rounded mb-2"/><div className="h-3 w-16 bg-slate-200 rounded"/></td>
+                    <td className="px-6 py-4"><div className="h-4 w-40 bg-slate-200 rounded"/></td>
+                    <td className="px-6 py-4"><div className="h-10 w-10 bg-slate-200 rounded-full mb-2"/><div className="h-4 w-32 bg-slate-200 rounded"/></td>
+                    <td className="px-6 py-4"><div className="h-6 w-20 bg-slate-200 rounded-full"/></td>
+                    <td className="px-6 py-4"><div className="h-8 w-8 bg-slate-200 rounded ml-auto"/></td>
+                  </tr>
+                ))
+              ) : items.length === 0 ? (
                 <tr>
-                  <th className="p-4 bg-slate-50">Item</th>
-                  <th className="p-4 bg-slate-50">Local / Cliente</th>
-                  <th className="p-4 bg-slate-50">{world === 'materiais' ? 'Quantidade' : 'Identificação'}</th>
-                  <th className="p-4 bg-slate-50">Status</th>
-                  <th className="p-4 text-right bg-slate-50">Ações</th>
+                  <td colSpan="6" className="px-6 py-12 text-center">
+                    <div className="flex flex-col items-center justify-center text-slate-400">
+                      <div className="p-4 bg-slate-50 rounded-full mb-3">
+                        <Package size={40} className="text-slate-300"/>
+                      </div>
+                      <p className="text-lg font-medium text-slate-600">Nenhum item encontrado</p>
+                      <p className="text-sm text-slate-400">Tente ajustar os filtros ou busque por outro termo.</p>
+                    </div>
+                  </td>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {loading ? <TableSkeleton /> : (
-                <>
-                {/* Spacer Topo (Simula altura dos itens acima) */}
-                {rowVirtualizer.getVirtualItems().length > 0 && (
-                  <tr style={{ height: `${rowVirtualizer.getVirtualItems()[0].start}px` }}>
-                    <td colSpan={5} style={{ padding: 0, border: 0 }} />
-                  </tr>
-                )}
-
-                {/* Itens Virtuais */}
-                {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-                  const item = filteredItems[virtualRow.index];
-                  return (
-                  <tr 
-                    key={item.id} 
-                    data-index={virtualRow.index}
-                    ref={rowVirtualizer.measureElement}
-                    className="hover:bg-blue-50/30 transition-colors"
-                  >
-                    <td className="p-4 cursor-pointer group" onClick={() => handleViewHistory(item)}>
-                      <div className="font-bold text-slate-800 group-hover:text-blue-600 transition-colors truncate max-w-[200px]" title={item.name}>{item.name}</div>
-                      <div className="text-xs text-slate-500">{item.brand}</div>
-                      <div className="text-[10px] text-blue-500 font-bold mt-1 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
-                        <History className="w-3 h-3"/> VER HISTÓRICO
-                      </div>
-                    </td>
-                    <td className="p-4 text-slate-600">
-                      <div className="flex items-center gap-1">
-                        {item.clientName ? <User className="w-3 h-3"/> : <MapPin className="w-3 h-3"/>}
-                        <span className="truncate max-w-[150px]" title={item.clientName || item.location}>{item.clientName || item.location}</span>
-                      </div>
-                    </td>
-                    <td className="p-4 font-mono text-xs">
-                      {world === 'materiais' && item.currentAmount !== null ? (
-                        <div className="text-slate-800 font-bold text-sm bg-slate-100 px-2 py-1 rounded w-fit">
-                          {item.currentAmount} <span className="text-[10px] font-normal text-slate-500 uppercase">{item.unit || 'un'}</span>
-                        </div>
-                      ) : (
-                        <>
-                          <div className="text-slate-700">SN: {item.serial}</div>
-                          {item.patrimony && <div className="text-blue-600">PAT: {item.patrimony}</div>}
-                        </>
-                      )}
-                    </td>
-                    <td className="p-4"><StatusBadge status={item.status} /></td>
-                    <td className="p-4 text-right">
-                      <div className="flex justify-end gap-2">
-                        <button onClick={() => { setSelectedItem(item); setShowMoveModal(true); }} className="p-1.5 text-blue-600 hover:bg-blue-100 rounded" title="Movimentar"><ArrowRightLeft className="w-4 h-4"/></button>
-                        <button onClick={() => { setSelectedItem(item); setShowEditModal(true); }} className="p-1.5 text-slate-500 hover:bg-slate-100 rounded" title="Editar"><Edit className="w-4 h-4"/></button>
-                        <PermissionGate permissions={['admin']}>
-                          <button onClick={() => { setSelectedItem(item); handleDeleteItem(); }} className="p-1.5 text-red-500 hover:bg-red-100 rounded" title="Excluir"><Trash2 className="w-4 h-4"/></button>
-                        </PermissionGate>
-                      </div>
-                    </td>
-                  </tr>
-                  );
-                })}
-
-                {/* Spacer Fundo (Simula altura dos itens abaixo) */}
-                {rowVirtualizer.getVirtualItems().length > 0 && (
-                  <tr style={{ height: `${rowVirtualizer.getTotalSize() - rowVirtualizer.getVirtualItems()[rowVirtualizer.getVirtualItems().length - 1].end}px` }}>
-                    <td colSpan={5} style={{ padding: 0, border: 0 }} />
-                  </tr>
-                )}
-
-                {filteredItems.length === 0 && (
-                  <tr><td colSpan="5" className="p-8 text-center text-slate-400">Nenhum item encontrado.</td></tr>
-                )}
-                </>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      {showMoveModal && selectedItem && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden">
-            <div className="p-4 border-b flex justify-between items-center bg-slate-50">
-              <div>
-                <h3 className="font-bold text-lg">Movimentar Item</h3>
-                <p className="text-xs text-slate-500">{selectedItem.name} - {selectedItem.serial}</p>
-              </div>
-              <button onClick={() => setShowMoveModal(false)}><X className="w-5 h-5 text-slate-400"/></button>
-            </div>
-            <form onSubmit={handleMoveItem} className="p-6 space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-500 mb-1">Ação</label>
-                <select className="w-full border p-2 rounded" value={moveData.action} onChange={e => setMoveData({...moveData, action: e.target.value})}>
-                  <option value="TROCA_CLIENTE">Instalar em Cliente</option>
-                  <option value="DEVOLUCAO">Devolver ao Estoque</option>
-                  <option value="DEFEITO">Reportar Defeito</option>
-                  <option value="EXTRAVIO">Reportar Extravio</option>
-                  <option value="BAIXA">Baixa (Venda/Lixo)</option>
-                </select>
-              </div>
-              
-              {moveData.action === 'TROCA_CLIENTE' && (
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 mb-1">Nome do Cliente</label>
-                  <input required className="w-full border p-2 rounded" placeholder="Ex: João da Silva" value={moveData.clientName} onChange={e => setMoveData({...moveData, clientName: e.target.value})} />
-                </div>
-              )}
-
-              <div>
-                <label className="block text-xs font-bold text-slate-500 mb-1">Observações / Motivo</label>
-                <textarea className="w-full border p-2 rounded" rows="3" value={moveData.reason} onChange={e => setMoveData({...moveData, reason: e.target.value})}></textarea>
-              </div>
-
-              <button type="submit" className="w-full bg-blue-600 text-white py-2 rounded font-bold hover:bg-blue-700">Confirmar Movimentação</button>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {showEditModal && selectedItem && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden">
-            <div className="p-4 border-b flex justify-between items-center bg-slate-50">
-              <h3 className="font-bold text-lg">Editar Dados</h3>
-              <button onClick={() => setShowEditModal(false)}><X className="w-5 h-5 text-slate-400"/></button>
-            </div>
-            <form onSubmit={handleUpdateItem} className="p-6 space-y-4">
-              <div className="p-3 bg-yellow-50 text-yellow-800 text-xs rounded border border-yellow-200">
-                Atenção: Use apenas para corrigir erros de cadastro. Para mudar de local, use "Movimentar".
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-500 mb-1">Serial</label>
-                <input className="w-full border p-2 rounded font-mono" value={selectedItem.serial} onChange={e => setSelectedItem({...selectedItem, serial: e.target.value})} />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-500 mb-1">Patrimônio</label>
-                <input className="w-full border p-2 rounded font-mono" value={selectedItem.patrimony} onChange={e => setSelectedItem({...selectedItem, patrimony: e.target.value})} />
-              </div>
-              <button type="submit" className="w-full bg-blue-600 text-white py-2 rounded font-bold hover:bg-blue-700">Salvar Alterações</button>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {showHistoryModal && selectedItem && createPortal(
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          {/* Backdrop com Blur */}
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onClick={() => setShowHistoryModal(false)}></div>
-          
-          {/* Conteúdo do Modal */}
-          <div className="relative bg-white rounded-xl shadow-2xl z-10 w-full max-w-3xl flex flex-col max-h-[90vh] animate-in fade-in zoom-in duration-200">
-            
-            {/* Cabeçalho Fixo */}
-            <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-white rounded-t-xl shrink-0">
-              <div>
-                <h3 className="font-bold text-xl text-gray-800 flex items-center gap-2">
-                  <History className="w-6 h-6 text-blue-600"/> Histórico do Item
-                </h3>
-                <p className="text-sm text-gray-500 mt-1">
-                  {selectedItem.name} <span className="mx-2">•</span> <span className="font-mono bg-gray-100 px-2 py-0.5 rounded text-gray-700 font-bold">{selectedItem.serial}</span>
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <button onClick={handlePrintHistory} className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Imprimir / PDF">
-                  <Printer className="w-5 h-5"/>
-                </button>
-                <button onClick={() => setShowHistoryModal(false)} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors">
-                  <X className="w-6 h-6"/>
-                </button>
-              </div>
-            </div>
-
-            {/* Corpo com Rolagem */}
-            <div className="p-0 overflow-y-auto flex-1 bg-white">
-              {loadingHistory ? (
-                <div className="p-12 flex flex-col items-center justify-center text-gray-400">
-                  <Loader2 className="w-10 h-10 animate-spin mb-3 text-blue-500"/>
-                  <p>Carregando histórico...</p>
-                </div>
-              ) : history.length === 0 ? (
-                <div className="p-12 flex flex-col items-center justify-center text-gray-400">
-                  <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mb-4">
-                    <History className="w-8 h-8 text-gray-300"/>
-                  </div>
-                  <p>Nenhum histórico encontrado para este item.</p>
-                </div>
               ) : (
-                <table className="w-full text-left border-collapse">
-                  <thead className="bg-gray-50 sticky top-0 z-10 shadow-sm">
-                    <tr>
-                      <th className="p-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Data</th>
-                      <th className="p-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Ação</th>
-                      <th className="p-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Usuário</th>
-                      <th className="p-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Detalhes</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                  {currentHistory.map((h, i) => (
-                    <tr key={i} className="even:bg-gray-50 hover:bg-blue-50/50 transition-colors">
-                      <td className="p-4 text-sm text-gray-600 whitespace-nowrap">
-                        <div className="font-medium">{new Date(h.date).toLocaleDateString('pt-BR')}</div>
-                        <div className="text-xs text-gray-400">{new Date(h.date).toLocaleTimeString('pt-BR')}</div>
-                      </td>
-                      <td className="p-4">
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 border border-blue-200">
-                          {h.action}
+                items.map((item) => (
+                  <tr key={item.id} className="hover:bg-blue-50/30 transition-colors group cursor-pointer" onClick={() => setSelectedItem(item)}>
+                    <td className="px-6 py-4 align-middle">
+                      <div className="flex flex-col">
+                        <span className="text-xs font-mono font-bold text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded w-fit mb-1 border border-slate-200">
+                          {item.serial || 'S/N'}
                         </span>
-                      </td>
-                      <td className="p-4 text-sm text-gray-700 font-medium">
-                        <div className="flex items-center gap-2">
-                          <div className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center text-xs font-bold text-gray-500">
-                            {(h.user || 'S').charAt(0)}
-                          </div>
-                          {h.user || 'Sistema'}
+                        <span className="text-[10px] text-slate-400 uppercase tracking-wide">
+                          PAT: {item.assetTag || '-'}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 align-middle">
+                      <div className="flex items-center gap-1.5 text-sm text-slate-700 font-medium">
+                        {item.clientName ? <Wifi size={14} className="text-blue-500"/> : <MapPin size={14} className="text-slate-400"/>}
+                        <span className="truncate max-w-[200px]">{item.clientName || item.location}</span>
+                      </div>
+                      <div className="text-xs text-slate-400 ml-5">{item.city}</div>
+                    </td>
+                    <td className="px-6 py-4 align-middle">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center overflow-hidden shrink-0">
+                          {item.photo ? <img src={item.photo} alt="" className="w-full h-full object-cover"/> : <Box className="text-slate-400" size={18}/>}
                         </div>
-                      </td>
-                      <td className="p-4 text-sm text-gray-600 max-w-xs break-words leading-relaxed">
-                        {h.details}
-                      </td>
-                    </tr>
-                  ))}
-                  </tbody>
-                </table>
+                        <div>
+                          <div className="font-bold text-slate-700 text-sm">{item.brand} {item.model}</div>
+                          <div className="text-xs text-slate-400 capitalize">{item.type}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 align-middle">
+                      <StatusBadge status={item.status} />
+                    </td>
+                    <td className="px-6 py-4 align-middle">
+                      <div className="flex justify-center items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); setSelectedItem(item); }}
+                          title="Ver Detalhes" 
+                          className="p-2 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                        >
+                          <Eye size={18}/>
+                        </button>
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); navigate(`/items/${item.id}/edit`); }} 
+                          title="Editar" 
+                          className="p-2 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                        >
+                          <Edit3 size={18}/>
+                        </button>
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); handleDelete(item.id); }}
+                          title="Excluir" 
+                          className="p-2 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                        >
+                          <Trash2 size={18}/>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
               )}
-            </div>
+            </tbody>
+          </table>
+        </div>
 
-            {/* Footer Paginação */}
-            {!loadingHistory && history.length > 0 && (
-              <div className="p-4 border-t border-gray-100 bg-gray-50 flex justify-between items-center rounded-b-xl shrink-0">
-                <span className="text-xs text-gray-500">
-                  Mostrando {indexOfFirstHistory + 1} - {Math.min(indexOfLastHistory, history.length)} de {history.length}
-                </span>
-                <div className="flex gap-2 items-center">
-                  <button 
-                    onClick={() => setHistoryPage(p => Math.max(1, p - 1))}
-                    disabled={historyPage === 1}
-                    className="p-1.5 rounded-lg hover:bg-white disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
-                  >
-                    <ChevronLeft className="w-4 h-4 text-gray-600"/>
-                  </button>
-                  <span className="text-xs font-bold text-gray-700">
-                    {historyPage} / {totalHistoryPages}
-                  </span>
-                  <button 
-                    onClick={() => setHistoryPage(p => Math.min(totalHistoryPages, p + 1))}
-                    disabled={historyPage === totalHistoryPages}
-                    className="p-1.5 rounded-lg hover:bg-white disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
-                  >
-                    <ChevronRight className="w-4 h-4 text-gray-600"/>
-                  </button>
-                </div>
-              </div>
-            )}
+        {/* PAGINAÇÃO */}
+        <div className="p-4 border-t border-slate-200 flex justify-between items-center bg-slate-50/50">
+          <span className="text-xs text-slate-500 font-medium">
+            Página {page} de {totalPages}
+          </span>
+          <div className="flex gap-2">
+            <button 
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+              disabled={page === 1}
+              className="px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium text-slate-600 disabled:opacity-50 hover:bg-slate-50 transition-colors"
+            >
+              Anterior
+            </button>
+            <button 
+              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+              disabled={page === totalPages}
+              className="px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium text-slate-600 disabled:opacity-50 hover:bg-slate-50 transition-colors"
+            >
+              Próximo
+            </button>
           </div>
-        </div>,
-        document.body
-      )}
+        </div>
+
+      </div>
     </div>
   );
 }
