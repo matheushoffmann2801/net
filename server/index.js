@@ -191,7 +191,9 @@ app.get("/api/notifications", authenticate, async (req, res) => {
         userId: pr.userId,
         user: pr.user,
         createdAt: pr.createdAt,
-        isPendingRequest: true // Flag para identificar no front
+        isPendingRequest: true, // Flag para identificar no front
+        data: pr.data, // Dados brutos para modal de detalhes
+        adminNotes: pr.adminNotes // Notas do admin (motivo de recusa)
       }));
 
       // Busca resoluções recentes para filtrar o que já foi feito

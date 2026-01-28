@@ -3,7 +3,7 @@ import {
   Camera, Search, Save, LogOut, Plus, Edit, X, CheckCircle, 
   ArrowLeft, ArrowRight, MapPin, QrCode, User, 
   Smartphone, Trash2, AlertTriangle, History, 
-  PenTool, Home, Wrench, ChevronRight, Signal, Zap
+  PenTool, Home, Wrench, ChevronRight, Signal, Zap, Eye
 } from 'lucide-react';
 import api from '../services/api';
 import toast from 'react-hot-toast';
@@ -268,6 +268,90 @@ const OcrScannerModal = ({ onClose, onScanSuccess }) => {
   );
 };
 
+// --- MODAL DE DETALHES DA SOLICITAÇÃO ---
+const RequestDetailsModal = ({ request, onClose }) => {
+  if (!request) return null;
+  let data = {};
+  try {
+    data = typeof request.data === 'string' ? JSON.parse(request.data) : request.data;
+  } catch(e) {}
+  
+  const isInstall = request.type === 'INSTALLATION';
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col">
+        <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+          <h3 className="font-bold text-slate-800">Solicitação #{request.id}</h3>
+          <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full"><X size={20}/></button>
+        </div>
+        
+        <div className="p-6 overflow-y-auto space-y-4">
+          {/* Status Banner */}
+          <div className={`p-3 rounded-xl border flex items-start gap-3 ${
+            request.status === 'REJECTED' ? 'bg-red-50 border-red-100 text-red-700' : 
+            request.status === 'APPROVED' ? 'bg-green-50 border-green-100 text-green-700' : 
+            'bg-yellow-50 border-yellow-100 text-yellow-700'
+          }`}>
+            {request.status === 'REJECTED' ? <AlertTriangle className="shrink-0 mt-0.5"/> : <CheckCircle className="shrink-0 mt-0.5"/>}
+            <div>
+              <p className="font-bold text-sm uppercase">{request.status === 'PENDING' ? 'Em Análise' : request.status === 'APPROVED' ? 'Aprovado' : 'Recusado'}</p>
+              {request.status === 'REJECTED' && request.adminNotes && (
+                <p className="text-sm mt-1"><strong>Motivo:</strong> {request.adminNotes}</p>
+              )}
+            </div>
+          </div>
+
+          {/* Installation Details */}
+          {isInstall ? (
+            <div className="space-y-4">
+              <div>
+                <h4 className="text-xs font-bold text-slate-400 uppercase mb-1">Cliente</h4>
+                <p className="font-medium text-slate-800">{data.clientName}</p>
+                <p className="text-sm text-slate-500">{data.address}</p>
+              </div>
+              
+              <div>
+                <h4 className="text-xs font-bold text-slate-400 uppercase mb-1">Equipamentos ({data.items?.length})</h4>
+                <div className="space-y-2">
+                  {data.items?.map((item, i) => (
+                    <div key={i} className="bg-slate-50 p-2 rounded border border-slate-100 text-sm">
+                      <p className="font-bold text-slate-700">{item.brand} {item.model}</p>
+                      <div className="flex gap-2 text-xs text-slate-500">
+                        <span>SN: {item.serial}</span>
+                        {item.patrimony && <span>PAT: {item.patrimony}</span>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {data.photos?.length > 0 && (
+                <div>
+                  <h4 className="text-xs font-bold text-slate-400 uppercase mb-2">Fotos</h4>
+                  <div className="grid grid-cols-3 gap-2">
+                    {data.photos.map((photo, i) => (
+                      <img key={i} src={photo} className="w-full h-20 object-cover rounded-lg border border-slate-200 cursor-pointer hover:scale-105 transition-transform" onClick={() => window.open(photo, '_blank')} />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            // Generic Details
+            <div className="space-y-2">
+               <h4 className="text-xs font-bold text-slate-400 uppercase">Dados da Solicitação</h4>
+               <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 text-xs font-mono overflow-x-auto">
+                 <pre>{JSON.stringify(data, null, 2)}</pre>
+               </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export default function TechDashboard() {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
@@ -301,6 +385,7 @@ export default function TechDashboard() {
   const [searchResults, setSearchResults] = useState([]);
   const [selectedItem, setSelectedItem] = useState(null);
   const [history, setHistory] = useState([]);
+  const [selectedRequest, setSelectedRequest] = useState(null);
   
   // Assinatura
   const canvasRef = useRef(null);
@@ -310,7 +395,46 @@ export default function TechDashboard() {
   useEffect(() => {
     api.get('/brands').then(r => setBrands(r.data)).catch(() => {});
     api.get('/models').then(r => setModels(r.data)).catch(() => {});
-    api.get('/my-requests').then(r => setMyRequests(r.data)).catch(() => {});
+    
+    // Polling para notificações de status (Verifica atualizações a cada 15s)
+    const fetchRequests = async () => {
+      try {
+        const { data: newRequests } = await api.get('/my-requests');
+        setMyRequests(prev => {
+          // Se já existiam dados, compara para achar mudanças de status
+          if (prev.length > 0) {
+            newRequests.forEach(newReq => {
+              const oldReq = prev.find(p => p.id === newReq.id);
+              // Detecta mudança de PENDENTE para FINALIZADO
+              if (oldReq && oldReq.status === 'PENDING' && newReq.status !== 'PENDING') {
+                if (newReq.status === 'APPROVED') {
+                  toast.success((t) => (
+                    <div onClick={() => { setSelectedRequest(newReq); toast.dismiss(t.id); }} className="cursor-pointer">
+                      <p className="font-bold">Solicitação #{newReq.id} Aprovada!</p>
+                      <p className="text-xs">Toque para ver detalhes</p>
+                    </div>
+                  ), { duration: 6000, icon: '🎉' });
+                  if (navigator.vibrate) navigator.vibrate([100, 50, 100]); // Vibração de festa
+                } else if (newReq.status === 'REJECTED') {
+                  toast.error((t) => (
+                    <div onClick={() => { setSelectedRequest(newReq); toast.dismiss(t.id); }} className="cursor-pointer">
+                      <p className="font-bold">Solicitação #{newReq.id} Recusada</p>
+                      <p className="text-xs">Toque para ver o motivo</p>
+                    </div>
+                  ), { duration: 8000 });
+                  if (navigator.vibrate) navigator.vibrate([200, 100, 200]); // Vibração de alerta
+                }
+              }
+            });
+          }
+          return newRequests;
+        });
+      } catch (e) { console.error("Erro no polling", e); }
+    };
+
+    fetchRequests(); // Carga inicial
+    const interval = setInterval(fetchRequests, 15000); // Polling ativo
+    return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
@@ -398,6 +522,9 @@ export default function TechDashboard() {
   // 1. HOME VIEW
   const renderHome = () => (
     <div className="p-4 space-y-6 pb-24 animate-in fade-in duration-500 max-w-2xl mx-auto">
+      
+      {selectedRequest && <RequestDetailsModal request={selectedRequest} onClose={() => setSelectedRequest(null)} />}
+
       {/* Welcome Card */}
       <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-3xl p-6 text-white shadow-2xl shadow-slate-200 relative overflow-hidden">
         <div className="absolute top-0 right-0 p-4 opacity-5"><Signal size={180} /></div>
@@ -454,7 +581,7 @@ export default function TechDashboard() {
         ) : (
           <div className="space-y-3">
             {myRequests.slice(0, 10).map((req, i) => (
-              <div key={req.id} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center justify-between active:scale-[0.98] transition-transform" style={{animationDelay: `${i * 50}ms`}}>
+              <div key={req.id} onClick={() => setSelectedRequest(req)} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center justify-between active:scale-[0.98] transition-transform cursor-pointer hover:bg-slate-50" style={{animationDelay: `${i * 50}ms`}}>
                 <div className="flex items-center gap-3">
                   <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-sm ${req.type === 'INSTALLATION' ? 'bg-green-50 text-green-600' : 'bg-blue-50 text-blue-600'}`}>
                     {req.type === 'INSTALLATION' ? <Home size={20}/> : <Wrench size={20}/>}
