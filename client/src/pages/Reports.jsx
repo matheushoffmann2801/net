@@ -1,10 +1,44 @@
 import React, { useState, useEffect } from 'react';
-import { FileText, Printer, History, DollarSign, Filter, Calendar, Search, Cable } from 'lucide-react';
+import { FileText, Printer, History, DollarSign, Filter, Calendar, Search, Cable, BarChart3, PieChart, ArrowRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '../contexts/AuthContext';
 import logo from './logo.png';
+
+const ReportCard = ({ title, description, icon: Icon, color, onClick, buttonText, stats, delay }) => (
+  <div 
+    className="relative overflow-hidden rounded-[2.5rem] p-8 bg-white border border-slate-100 shadow-sm hover:shadow-[0_20px_40px_-15px_rgba(0,0,0,0.1)] hover:-translate-y-1 transition-all duration-500 group flex flex-col h-full animate-in fade-in slide-in-from-bottom-4"
+    style={{ animationFillMode: 'both', animationDelay: `${delay}ms` }}
+  >
+    <div className={`w-14 h-14 rounded-2xl ${color.bg} ${color.text} flex items-center justify-center mb-6 group-hover:scale-110 group-hover:rotate-3 transition-transform duration-500 shadow-sm`}>
+      <Icon size={28} strokeWidth={2} />
+    </div>
+    
+    <h3 className="text-2xl font-bold text-slate-800 mb-3 tracking-tight">{title}</h3>
+    <p className="text-slate-500 text-sm mb-8 flex-1 leading-relaxed font-medium">
+      {description}
+    </p>
+
+    {stats && (
+      <div className="mb-8 p-5 bg-slate-50/80 rounded-2xl border border-slate-100 backdrop-blur-sm">
+        {stats}
+      </div>
+    )}
+
+    <button 
+      onClick={onClick}
+      className={`w-full py-4 rounded-xl font-bold text-white shadow-lg transition-all active:scale-[0.98] flex items-center justify-center gap-3 ${color.btn} ${color.shadow} group-hover:shadow-xl`}
+    >
+      {buttonText === 'Ver Relatório' ? <FileText className="w-5 h-5" /> : <Printer className="w-5 h-5" />} {buttonText}
+    </button>
+
+    {/* Decorative Icon */}
+    <div className="absolute -right-8 -bottom-8 opacity-[0.03] group-hover:opacity-[0.06] transition-opacity duration-500 pointer-events-none rotate-12">
+      <Icon size={200} />
+    </div>
+  </div>
+);
 
 export default function Reports() {
   const navigate = useNavigate();
@@ -216,98 +250,133 @@ export default function Reports() {
   const totals = calculateTotals(filteredItems);
 
   return (
-    <div className="p-6 max-w-6xl mx-auto animate-slide-up">
-      <h1 className="text-2xl font-bold mb-6 text-gray-800">Relatórios</h1>
+    <div className="min-h-screen bg-[#F8FAFC] p-6 md:p-10 animate-in fade-in duration-700 relative overflow-hidden">
+      {/* Background Decoration */}
+      <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none z-0">
+        <div className="absolute top-[-10%] right-[-5%] w-[40%] h-[40%] bg-blue-100/40 rounded-full blur-[120px]"></div>
+        <div className="absolute bottom-[-10%] left-[-5%] w-[40%] h-[40%] bg-purple-100/40 rounded-full blur-[120px]"></div>
+      </div>
+
+      <div className="max-w-[1800px] mx-auto space-y-8 relative z-10">
+        
+        {/* Header */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+                <h1 className="text-4xl font-bold text-slate-800 tracking-tight flex items-center gap-3">Relatórios <span className="text-sm font-medium bg-blue-50 text-blue-600 px-3 py-1 rounded-full border border-blue-100 align-middle">Gerenciais</span></h1>
+                <p className="text-slate-500 font-medium mt-1">Exportação de dados e análises financeiras.</p>
+            </div>
+        </div>
       
       {/* BARRA DE FILTROS */}
-      <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 mb-6 flex flex-wrap gap-4 items-end">
-        <div>
-          <label className="block text-xs font-bold text-gray-500 mb-1 flex items-center gap-1"><Calendar className="w-3 h-3"/> Início</label>
-          <input type="date" className="border p-2 rounded text-sm outline-none focus:ring-2 focus:ring-blue-500" value={dateRange.start} onChange={e => setDateRange({...dateRange, start: e.target.value})} />
+      <div className="bg-white/80 backdrop-blur-xl p-6 rounded-[2rem] shadow-sm border border-slate-200/60 flex flex-col lg:flex-row gap-6 items-end">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 flex-1 w-full">
+          <div>
+            <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1"><Calendar className="w-3 h-3"/> Início</label>
+            <input type="date" className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-medium text-slate-600" value={dateRange.start} onChange={e => setDateRange({...dateRange, start: e.target.value})} />
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1"><Calendar className="w-3 h-3"/> Fim</label>
+            <input type="date" className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-medium text-slate-600" value={dateRange.end} onChange={e => setDateRange({...dateRange, end: e.target.value})} />
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1"><Filter className="w-3 h-3"/> Tipo</label>
+            <select className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-medium text-slate-600" value={filterType} onChange={e => setFilterType(e.target.value)}>
+              <option value="all">Todos</option>
+              <option value="equipamento">Equipamentos</option>
+              <option value="material">Materiais</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1"><Filter className="w-3 h-3"/> Status</label>
+            <select className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-medium text-slate-600" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
+              <option value="all">Todos</option>
+              <option value="disponivel">Disponível</option>
+              <option value="em_uso">Em Uso</option>
+              <option value="manutencao">Manutenção</option>
+              <option value="extraviado">Extraviado</option>
+            </select>
+          </div>
         </div>
-        <div>
-          <label className="block text-xs font-bold text-gray-500 mb-1 flex items-center gap-1"><Calendar className="w-3 h-3"/> Fim</label>
-          <input type="date" className="border p-2 rounded text-sm outline-none focus:ring-2 focus:ring-blue-500" value={dateRange.end} onChange={e => setDateRange({...dateRange, end: e.target.value})} />
+        
+        <div className="w-full lg:w-auto flex flex-col gap-2 min-w-[300px]">
+           <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1"><Search className="w-3 h-3"/> Busca Rápida</label>
+           <div className="relative">
+             <input 
+               type="text" 
+               className="w-full bg-slate-50 border border-slate-200 pl-10 pr-4 py-3 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-medium" 
+               placeholder="Serial, Nome, Cliente..." 
+               value={searchTerm} 
+               onChange={e => setSearchTerm(e.target.value)} 
+             />
+             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+           </div>
         </div>
-        <div>
-          <label className="block text-xs font-bold text-gray-500 mb-1 flex items-center gap-1"><Filter className="w-3 h-3"/> Tipo</label>
-          <select className="border p-2 rounded text-sm bg-white outline-none focus:ring-2 focus:ring-blue-500" value={filterType} onChange={e => setFilterType(e.target.value)}>
-            <option value="all">Todos</option>
-            <option value="equipamento">Equipamentos</option>
-            <option value="material">Materiais</option>
-          </select>
-        </div>
-        <div>
-          <label className="block text-xs font-bold text-gray-500 mb-1 flex items-center gap-1"><Filter className="w-3 h-3"/> Status</label>
-          <select className="border p-2 rounded text-sm bg-white outline-none focus:ring-2 focus:ring-blue-500" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
-            <option value="all">Todos</option>
-            <option value="disponivel">Disponível</option>
-            <option value="em_uso">Em Uso</option>
-            <option value="manutencao">Manutenção</option>
-            <option value="extraviado">Extraviado</option>
-          </select>
-        </div>
-        <div className="flex-1 min-w-[200px]">
-           <label className="block text-xs font-bold text-gray-500 mb-1 flex items-center gap-1"><Search className="w-3 h-3"/> Busca Rápida</label>
-           <input 
-             type="text" 
-             className="w-full border p-2 rounded text-sm outline-none focus:ring-2 focus:ring-blue-500" 
-             placeholder="Serial, Nome, Cliente..." 
-             value={searchTerm} 
-             onChange={e => setSearchTerm(e.target.value)} 
-           />
-        </div>
-        <div className="w-full md:w-auto text-right pb-1">
-            <button onClick={() => { setDateRange({start:'', end:''}); setFilterType('all'); setFilterStatus('all'); setSearchTerm(''); }} className="text-xs font-bold text-blue-600 hover:underline">Limpar Filtros</button>
+        
+        <div className="pb-1">
+            <button onClick={() => { setDateRange({start:'', end:''}); setFilterType('all'); setFilterStatus('all'); setSearchTerm(''); }} className="p-3 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-colors" title="Limpar Filtros">
+              <Filter className="w-5 h-5"/>
+            </button>
         </div>
       </div>
 
       {loading ? (
-        <div className="text-center py-12 text-gray-500">Carregando dados...</div>
+        <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div></div>
       ) : (
-        <div className="grid md:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
           {/* CARD 1: ESTOQUE */}
-          <div className="bg-white p-6 rounded-xl shadow border transition-all hover:-translate-y-1 hover:shadow-lg flex flex-col">
-            <h3 className="font-bold flex gap-2 mb-4 text-blue-700"><Printer/> Estoque Atual</h3>
-            <p className="text-sm text-gray-500 mb-4 flex-1">
-              Gera uma lista detalhada dos itens atualmente no sistema, respeitando os filtros acima.
-              <br/><br/>
-              <strong>{filteredItems.length}</strong> itens encontrados.
-            </p>
-            <button onClick={() => {
-                handlePrint('Relatorio_Estoque', ['Nome','Patrimonio','Serial','Status','Cliente', 'Entrada'], filteredItems.map(i=>[i.name, i.patrimony, i.serial, i.status.toUpperCase().replace('_',' '), i.clientName || '-', new Date(i.createdAt).toLocaleDateString()]))
-              }} 
-              className="w-full bg-blue-600 text-white px-4 py-2 rounded font-bold hover:bg-blue-700 flex items-center justify-center gap-2">
-              <Printer className="w-4 h-4"/> Imprimir Relatório
-            </button>
-          </div>
+          <ReportCard 
+            title="Estoque Atual"
+            description="Gera uma lista detalhada dos itens atualmente no sistema, respeitando os filtros aplicados."
+            icon={BarChart3}
+            color={{ bg: 'bg-blue-50', text: 'text-blue-600', btn: 'bg-blue-600 hover:bg-blue-700', shadow: 'shadow-blue-600/20' }}
+            buttonText="Imprimir Relatório"
+            delay={100}
+            stats={
+              <div className="flex justify-between items-center">
+                <span className="text-sm font-bold text-slate-500">Itens Listados</span>
+                <span className="text-2xl font-bold text-blue-600">{filteredItems.length}</span>
+              </div>
+            }
+            onClick={() => {
+              handlePrint('Relatorio_Estoque', ['Nome','Patrimonio','Serial','Status','Cliente', 'Entrada'], filteredItems.map(i=>[i.name, i.patrimony, i.serial, i.status.toUpperCase().replace('_',' '), i.clientName || '-', new Date(i.createdAt).toLocaleDateString()]))
+            }}
+          />
 
           {/* CARD 2: HISTÓRICO */}
-          <div className="bg-white p-6 rounded-xl shadow border transition-all hover:-translate-y-1 hover:shadow-lg flex flex-col">
-            <h3 className="font-bold flex gap-2 mb-4 text-purple-700"><History/> Histórico Geral</h3>
-            <p className="text-sm text-gray-500 mb-4 flex-1">
-              Relatório de movimentações e auditoria. Útil para rastrear alterações.
-              <br/><br/>
-              <strong>{filteredHistory.length}</strong> eventos encontrados.
-            </p>
-            <button onClick={() => {
-                handlePrint('Relatorio_Historico', ['Data','Usuario','Acao','Serial','Detalhes'], filteredHistory.slice().reverse().slice(0,500).map(h=>[new Date(h.date).toLocaleDateString() + ' ' + new Date(h.date).toLocaleTimeString(), h.user, h.action, h.itemSerial, h.details]))
-              }} 
-              className="w-full bg-purple-600 text-white px-4 py-2 rounded font-bold hover:bg-purple-700 flex items-center justify-center gap-2">
-              <Printer className="w-4 h-4"/> Imprimir Histórico
-            </button>
-          </div>
+          <ReportCard 
+            title="Histórico Geral"
+            description="Relatório de movimentações e auditoria. Útil para rastrear alterações e eventos."
+            icon={History}
+            color={{ bg: 'bg-purple-50', text: 'text-purple-600', btn: 'bg-purple-600 hover:bg-purple-700', shadow: 'shadow-purple-600/20' }}
+            buttonText="Imprimir Histórico"
+            delay={200}
+            stats={
+              <div className="flex justify-between items-center">
+                <span className="text-sm font-bold text-slate-500">Eventos</span>
+                <span className="text-2xl font-bold text-purple-600">{filteredHistory.length}</span>
+              </div>
+            }
+            onClick={() => {
+              handlePrint('Relatorio_Historico', ['Data','Usuario','Acao','Serial','Detalhes'], filteredHistory.slice().reverse().slice(0,500).map(h=>[new Date(h.date).toLocaleDateString() + ' ' + new Date(h.date).toLocaleTimeString(), h.user, h.action, h.itemSerial, h.details]))
+            }}
+          />
 
           {/* CARD 3: FINANCEIRO */}
-          <div className="bg-white p-6 rounded-xl shadow border transition-all hover:-translate-y-1 hover:shadow-lg flex flex-col">
-            <h3 className="font-bold flex gap-2 mb-4 text-red-700"><DollarSign/> Financeiro & Perdas</h3>
-            <div className="space-y-2 mb-4 text-sm flex-1">
-               <div className="flex justify-between"><span>Em Uso:</span> <span className="font-bold text-green-600">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totals.inUse)}</span></div>
-               <div className="flex justify-between"><span>Manutenção:</span> <span className="font-bold text-orange-600">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totals.maintenance)}</span></div>
-               <div className="flex justify-between"><span>Extraviados:</span> <span className="font-bold text-red-600">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totals.lost)}</span></div>
-               <div className="flex justify-between border-t pt-2 mt-2"><span>Total Filtrado:</span> <span className="font-bold text-gray-800">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totals.total)}</span></div>
-            </div>
-            <button onClick={() => {
+          <ReportCard 
+            title="Financeiro"
+            description="Análise de valor do inventário, incluindo ativos em uso, manutenção e perdas."
+            icon={DollarSign}
+            color={{ bg: 'bg-emerald-50', text: 'text-emerald-600', btn: 'bg-emerald-600 hover:bg-emerald-700', shadow: 'shadow-emerald-600/20' }}
+            buttonText="Imprimir Financeiro"
+            delay={300}
+            stats={
+              <div className="space-y-2">
+                 <div className="flex justify-between text-xs"><span className="text-slate-500">Em Uso</span> <span className="font-bold text-emerald-600">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totals.inUse)}</span></div>
+                 <div className="flex justify-between text-xs"><span className="text-slate-500">Perdas</span> <span className="font-bold text-red-500">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totals.lost)}</span></div>
+                 <div className="flex justify-between border-t border-slate-200 pt-2 mt-1"><span className="font-bold text-slate-700">Total</span> <span className="font-bold text-slate-800">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totals.total)}</span></div>
+              </div>
+            }
+            onClick={() => {
               const summary = `Total Geral (Risco/Ativo): ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totals.total)}`;
               
               handlePrint('Relatorio_Financeiro', 
@@ -321,25 +390,28 @@ export default function Reports() {
                 ]),
                 summary
               );
-            }} 
-              className="w-full bg-red-600 text-white px-4 py-2 rounded font-bold hover:bg-red-700 flex items-center justify-center gap-2">
-              <Printer className="w-4 h-4"/> Imprimir Financeiro
-            </button>
-          </div>
+            }}
+          />
 
           {/* CARD 4: CONSUMO */}
-          <div className="bg-white p-6 rounded-xl shadow border transition-all hover:-translate-y-1 hover:shadow-lg flex flex-col">
-            <h3 className="font-bold flex gap-2 mb-4 text-orange-700"><Cable/> Consumo</h3>
-            <p className="text-sm text-gray-500 mb-4 flex-1">
-              Relatório detalhado de consumo de cabos e materiais por técnico.
-            </p>
-            <button onClick={() => navigate('/reports/consumption')} 
-              className="w-full bg-orange-600 text-white px-4 py-2 rounded font-bold hover:bg-orange-700 flex items-center justify-center gap-2">
-              <FileText className="w-4 h-4"/> Ver Relatório
-            </button>
-          </div>
+          <ReportCard 
+            title="Consumo"
+            description="Relatório detalhado de consumo de cabos e materiais por técnico."
+            icon={Cable}
+            color={{ bg: 'bg-orange-50', text: 'text-orange-600', btn: 'bg-orange-600 hover:bg-orange-700', shadow: 'shadow-orange-600/20' }}
+            buttonText="Ver Relatório"
+            delay={400}
+            stats={
+              <div className="flex items-center gap-2 text-sm text-slate-500">
+                <div className="w-2 h-2 rounded-full bg-orange-500 animate-pulse"></div>
+                Acompanhamento em tempo real
+              </div>
+            }
+            onClick={() => navigate('/reports/consumption')}
+          />
         </div>
       )}
+      </div>
     </div>
   );
 }
