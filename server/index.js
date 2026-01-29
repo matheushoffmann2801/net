@@ -7,13 +7,49 @@ const bcrypt = require("bcryptjs");
 const fs = require("fs");
 const path = require("path");
 
+// Middlewares de Segurança e Performance (Opcionais - instale para ativar)
+let helmet, compression, rateLimit;
+try { helmet = require("helmet"); } catch(e) { console.warn("Dica: 'npm install helmet' para mais segurança."); }
+try { compression = require("compression"); } catch(e) { console.warn("Dica: 'npm install compression' para melhor performance."); }
+try { rateLimit = require("express-rate-limit"); } catch(e) { console.warn("Dica: 'npm install express-rate-limit' para proteção contra brute-force."); }
+
 const app = express();
 const prisma = new PrismaClient();
 const SECRET_KEY = process.env.JWT_SECRET || "sua_chave_secreta_super_segura_aqui"; // Usa ENV ou fallback
 
+if (!process.env.JWT_SECRET) {
+  console.warn("\x1b[33m%s\x1b[0m", "⚠️  AVISO DE SEGURANÇA: JWT_SECRET não definido. Usando chave padrão insegura.");
+}
+
 app.use(express.json({ limit: '50mb' })); // Aumentado para suportar imports grandes
 app.use(express.raw({ type: 'application/octet-stream', limit: '100mb' })); // Para upload de backup
 app.use(cors());
+
+// --- CONFIGURAÇÃO DE SEGURANÇA E PERFORMANCE ---
+app.disable('x-powered-by'); // Oculta header do Express
+
+if (helmet) app.use(helmet());
+if (compression) app.use(compression());
+
+if (rateLimit) {
+  // Limitador Geral
+  const globalLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutos
+    max: 500, // Limite alto para uso geral da API
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: "Muitas requisições. Tente novamente mais tarde." }
+  });
+  app.use("/api/", globalLimiter);
+
+  // Limitador Específico para Login (Mais estrito)
+  const loginLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000, // 1 hora
+    max: 10, // 10 tentativas por IP
+    message: { error: "Muitas tentativas de login. Bloqueado temporariamente." }
+  });
+  app.use("/api/login", loginLimiter);
+}
 
 // --- MIDDLEWARES ---
 
@@ -25,7 +61,11 @@ const authenticate = async (req, res, next) => { // Tornar async para buscar o u
   try {
     const decoded = jwt.verify(token, SECRET_KEY);
     req.userId = decoded.id;
-    req.user = await prisma.user.findUnique({ where: { id: decoded.id } }); // Adiciona o objeto user completo
+    // Otimização: Seleciona apenas campos necessários para autenticação e auditoria
+    req.user = await prisma.user.findUnique({ 
+      where: { id: decoded.id },
+      select: { id: true, username: true, role: true, active: true, name: true }
+    }); 
     if (!req.user || !req.user.active) return res.status(401).json({ error: "Usuário não encontrado ou inativo" });
     next();
   } catch (err) {
@@ -296,7 +336,18 @@ const ensureDbSchema = async () => {
 
 app.get("/api/users", authenticate, async (req, res) => {
   try {
-    const users = await prisma.user.findMany();
+    // Otimização: Select para buscar apenas campos necessários e evitar trafegar senhas (hash)
+    const users = await prisma.user.findMany({
+      select: {
+        id: true,
+        name: true,
+        username: true,
+        role: true,
+        active: true,
+        allowedCities: true,
+        lastLogin: true
+      }
+    });
     const formatted = users.map(u => ({
       ...u,
       allowedCities: u.allowedCities ? JSON.parse(u.allowedCities) : []
@@ -504,17 +555,28 @@ app.get("/api/items", authenticate, async (req, res) => {
     if (type === 'equipamentos') statsWhere.isConsumable = false;
     if (type === 'consumiveis') statsWhere.isConsumable = true;
     
-    // Fazemos 3 counts rápidos no banco
-    const [totalBase, available, inUse, maintenance, valueAgg] = await Promise.all([
-      prisma.item.count({ where: statsWhere }),
-      prisma.item.count({ where: { ...statsWhere, status: 'disponivel' } }),
-      prisma.item.count({ where: { ...statsWhere, status: 'em_uso' } }),
-      prisma.item.count({ where: { ...statsWhere, status: 'manutencao' } }),
+    // Otimização: Agrupamento para contagem de status (1 query em vez de 4)
+    const [statusGroups, valueAgg] = await Promise.all([
+      prisma.item.groupBy({
+        by: ['status'],
+        where: statsWhere,
+        _count: true
+      }),
       prisma.item.aggregate({
         _sum: { value: true },
         where: statsWhere
       })
     ]);
+
+    const statsMap = statusGroups.reduce((acc, curr) => {
+      acc[curr.status] = curr._count;
+      return acc;
+    }, {});
+
+    const available = statsMap['disponivel'] || 0;
+    const inUse = statsMap['em_uso'] || 0;
+    const maintenance = statsMap['manutencao'] || 0;
+    const totalBase = Object.values(statsMap).reduce((a, b) => a + b, 0);
 
     const totalValue = valueAgg._sum.value || 0;
     const stats = { total: totalBase, available, inUse, maintenance, totalValue };
@@ -1388,13 +1450,30 @@ app.get("/api/reports/consumption", authenticate, async (req, res) => {
 // --- ROTA GERAL DE HISTÓRICO (Dashboard/Relatórios) ---
 app.get("/api/history", authenticate, async (req, res) => {
   try {
-    const { limit } = req.query;
-    const take = limit ? Number(limit) : 200;
+    const { page = 1, limit = 50 } = req.query;
+    const take = Number(limit);
+    const skip = (Number(page) - 1) * take;
 
     const history = await prisma.history.findMany({
-      take: take, // Aceita limite dinâmico do front
+      take,
+      skip,
       orderBy: { date: 'desc' },
-      include: { item: true, user: true, technician: true }
+      // Otimização: Select para evitar buscar o objeto Item inteiro (que pode ter fotos pesadas)
+      select: {
+        id: true,
+        date: true,
+        action: true,
+        description: true,
+        item: {
+          select: { serial: true, assetTag: true, brand: true, model: true }
+        },
+        user: {
+          select: { name: true }
+        },
+        technician: {
+          select: { name: true }
+        }
+      }
     });
     
     // Formata para o frontend
@@ -1402,7 +1481,7 @@ app.get("/api/history", authenticate, async (req, res) => {
       id: h.id,
       date: h.date,
       action: h.action,
-      user: h.user?.name || h.technician?.name || 'Sistema', 
+      user: h.user?.name || h.technician?.name || 'Sistema',
       itemSerial: h.item?.serial || 'N/A',
       details: h.description
     }));
@@ -1428,7 +1507,16 @@ app.get("/api/items/:id/history", authenticate, async (req, res) => {
     if (!isNaN(id)) {
       item = await prisma.item.findUnique({ 
         where: { id: Number(id) },
-        include: { history: { include: { technician: true, user: true }, orderBy: { date: 'desc' } } }
+        include: { 
+          history: { 
+            // Otimização: Busca apenas nomes nas relações
+            include: { 
+              technician: { select: { name: true } }, 
+              user: { select: { name: true } } 
+            }, 
+            orderBy: { date: 'desc' } 
+          } 
+        }
       });
     }
     
@@ -1436,7 +1524,7 @@ app.get("/api/items/:id/history", authenticate, async (req, res) => {
     if (!item) {
       item = await prisma.item.findUnique({ 
         where: { serial: id },
-        include: { history: { include: { technician: true, user: true }, orderBy: { date: 'desc' } } }
+        include: { history: { include: { technician: { select: { name: true } }, user: { select: { name: true } } }, orderBy: { date: 'desc' } } }
       });
     }
 
@@ -1459,12 +1547,21 @@ app.get("/api/items/:id/history", authenticate, async (req, res) => {
 // --- ROTA DE AUDITORIA ---
 app.get("/api/audit", authenticate, async (req, res) => {
   try {
-    const logs = await prisma.auditLog.findMany({
-      take: 100,
-      orderBy: { createdAt: 'desc' },
-      include: { user: { select: { name: true, username: true } } }
-    });
-    res.json(logs);
+    const { page = 1, limit = 50 } = req.query;
+    const take = Number(limit);
+    const skip = (Number(page) - 1) * take;
+
+    const [total, logs] = await prisma.$transaction([
+      prisma.auditLog.count(),
+      prisma.auditLog.findMany({
+        take,
+        skip,
+        orderBy: { createdAt: 'desc' },
+        include: { user: { select: { name: true, username: true } } }
+      })
+    ]);
+
+    res.json({ data: logs, meta: { total, page: Number(page), pages: Math.ceil(total / take) } });
   } catch (e) { res.status(500).json({ error: "Erro ao buscar logs" }); }
 });
 
@@ -1530,6 +1627,12 @@ app.post("/api/admin/restore", authenticate, async (req, res) => {
     console.error(e);
     res.status(500).json({ error: "Erro ao restaurar: " + e.message });
   }
+});
+
+// --- GLOBAL ERROR HANDLER ---
+app.use((err, req, res, next) => {
+  console.error("❌ Erro não tratado:", err.stack);
+  res.status(500).json({ error: "Erro interno do servidor. Contate o suporte." });
 });
 
 // Inicializa servidor e cria admin

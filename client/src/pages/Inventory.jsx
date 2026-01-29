@@ -39,15 +39,15 @@ const StatusBadge = ({ status }) => {
 };
 
 const StatCard = ({ title, value, icon: Icon, color, subtext }) => (
-  <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow">
+  <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
     <div className="flex justify-between items-start mb-2">
-      <div className={`p-2.5 rounded-xl ${color}`}>
+      <div className={`p-2.5 rounded-xl ${color} shadow-sm`}>
         <Icon size={20} />
       </div>
       {subtext && <span className="text-xs font-medium text-slate-400 bg-slate-50 px-2 py-1 rounded-lg">{subtext}</span>}
     </div>
     <h3 className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">{title}</h3>
-    <p className="text-2xl font-bold text-slate-800">{value}</p>
+    <p className="text-2xl font-bold text-slate-800 tracking-tight">{value}</p>
   </div>
 );
 
