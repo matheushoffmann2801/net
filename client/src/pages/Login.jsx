@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { Lock, User, Wifi, MapPin, ArrowRight, Server, ShieldCheck, HelpCircle, Key, Wrench } from 'lucide-react';
+import { Lock, User, Wifi, MapPin, ArrowRight, Server, ShieldCheck, HelpCircle, Key, Wrench, ClipboardCheck } from 'lucide-react';
 import api from '../services/api';
 import logo from './logo.png';
 
@@ -240,9 +240,14 @@ export default function Login() {
               </div>
 
               <div className="pt-6 border-t border-gray-100 mt-6">
-                <button type="button" onClick={() => navigate('/tech-login')} className="w-full py-2 text-gray-500 hover:text-gray-700 hover:bg-gray-50 rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-colors">
-                  <Wrench className="w-4 h-4"/> Acesso Técnico
-                </button>
+                <div className="grid grid-cols-2 gap-3">
+                  <button type="button" onClick={() => navigate('/tech-login')} className="py-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-colors border border-transparent hover:border-blue-100">
+                    <Wrench className="w-4 h-4"/> Acesso Técnico
+                  </button>
+                  <button type="button" onClick={() => navigate('/general-login')} className="py-2 text-gray-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-colors border border-transparent hover:border-emerald-100">
+                    <ClipboardCheck className="w-4 h-4"/> Controle Geral
+                  </button>
+                </div>
               </div>
             </form>
           ) : (

@@ -78,7 +78,7 @@ const mapItemToFront = (item) => ({
   ...item,
   name: `${item.brand} ${item.model}`, // Garante nome para exibição
   category: item.isConsumable ? 'material' : 'equipamento', // Reconverte para o front
-  clientName: item.currentHolder, // Mapeia currentHolder de volta para clientName
+  client: item.currentHolder, // Mapeia currentHolder para 'client' (Código)
   location: item.currentLocation,
   patrimony: item.assetTag, // Mapeia assetTag para patrimony,
   observations: item.observations,
@@ -651,10 +651,12 @@ app.post("/api/items", authenticate, async (req, res) => {
         initialAmount: Number(data.initialAmount) || null,
         currentAmount: Number(data.currentAmount) || Number(data.initialAmount) || null,
         unit: data.unit || null,
+        createdAt: data.entryDate ? new Date(data.entryDate) : undefined, // Garante que a data de criação seja salva se enviada
+        expiresAt: data.expiresAt ? new Date(data.expiresAt) : null,
         // Cria registro inicial no histórico automaticamente
         history: {
           create: {
-            action: "CRIACAO",
+            action: "CADASTRO",
             description: "Item cadastrado no sistema",
             location: data.location || 'Estoque',
             technician: techConnect
@@ -728,10 +730,12 @@ app.put("/api/items/:id", authenticate, async (req, res) => {
         assetTag: data.patrimony, // front chama de patrimony
         mac: data.mac,
         value: Number(data.value) || 0,
+        currentHolder: data.client || data.clientName, // Atualiza o cliente (código) se enviado
         observations: data.observations,
         initialAmount: data.initialAmount !== undefined ? Number(data.initialAmount) : undefined,
         currentAmount: data.currentAmount !== undefined ? Number(data.currentAmount) : undefined,
         unit: data.unit,
+        expiresAt: data.expiresAt ? new Date(data.expiresAt) : (data.expiresAt === '' ? null : undefined),
       }
     });
 
@@ -809,7 +813,7 @@ app.get("/api/my-requests", authenticate, async (req, res) => {
 // --- ROTA DE NOVA INSTALAÇÃO (GUIA DO TÉCNICO) ---
 app.post("/api/installations", authenticate, async (req, res) => {
   try {
-    const { clientName, clientCode, address, coords, items, photos, observations, signature } = req.body;
+    const { client, address, coords, items, photos, observations, signature } = req.body;
 
     // Validação de Localização (Garante que coords tem lat/lng válidos)
     let validatedCoords = coords;
@@ -825,13 +829,12 @@ app.post("/api/installations", authenticate, async (req, res) => {
     })) : [];
     
     // Validação básica
-    if (!clientName || !cleanedItems || cleanedItems.length === 0) {
+    if (!client || !cleanedItems || cleanedItems.length === 0) {
       return res.status(400).json({ error: "Dados incompletos. Informe cliente e equipamentos." });
     }
 
     const requestData = {
-      clientName,
-      clientCode,
+      client, // Código do cliente
       address,
       coords: validatedCoords,
       items: cleanedItems,
@@ -850,7 +853,7 @@ app.post("/api/installations", authenticate, async (req, res) => {
       }
     });
 
-    await logAudit(req.userId, 'SOLICITACAO_INSTALACAO', 'Instalação', `Nova instalação registrada para ${clientName}`);
+    await logAudit(req.userId, 'SOLICITACAO_INSTALACAO', 'Instalação', `Nova instalação registrada para Cód: ${client}`);
 
     res.status(201).json({ success: true, message: "Instalação registrada com sucesso!" });
   } catch (e) {
@@ -903,7 +906,7 @@ app.post("/api/admin/requests/:id/approve", authenticate, async (req, res) => {
       // Adiciona histórico inicial
       dataToCreate.history = {
         create: {
-          action: "CRIACAO",
+          action: "CADASTRO",
           description: "Item cadastrado via Solicitação",
           location: dataToCreate.currentLocation,
           technician: techConnect
@@ -922,7 +925,7 @@ app.post("/api/admin/requests/:id/approve", authenticate, async (req, res) => {
       await tx.item.update({ where: { id: request.itemId }, data: requestData.updateData }); 
       await tx.auditLog.create({ data: { userId: req.userId, action: 'APROVAR_MOVIMENTACAO', resource: 'Item', details: `Aprovou movimentação do item ID ${request.itemId}` } });
     } else if (request.type === 'INSTALLATION') {
-      const { clientName, items, address } = requestData;
+      const { client, items, address } = requestData;
       if (!items || !Array.isArray(items)) throw new Error("Lista de itens inválida na instalação.");
       
       // Processa cada item da instalação
@@ -943,10 +946,10 @@ app.post("/api/admin/requests/:id/approve", authenticate, async (req, res) => {
                 mac: itemData.mac,
                 assetTag: itemData.patrimony || `INST-${Date.now()}-${Math.floor(Math.random()*1000)}`,
                 status: 'em_uso',
-                currentHolder: clientName,
+                currentHolder: client, // Salva o código
                 currentLocation: 'Cliente',
                 city: 'Nova Maringá', // Padrão, já que o técnico não seleciona cidade na instalação
-                history: { create: { action: 'INSTALACAO_NOVA', description: `Instalado em ${clientName} (${address})`, location: 'Cliente', technician: techConnect } }
+                history: { create: { action: 'INSTALACAO_NOVA', description: `Instalado em Cód: ${client} (${address})`, location: 'Cliente', technician: techConnect } }
               }
             });
          } else {
@@ -955,14 +958,14 @@ app.post("/api/admin/requests/:id/approve", authenticate, async (req, res) => {
               where: { id: item.id },
               data: {
                 status: 'em_uso',
-                currentHolder: clientName,
+                currentHolder: client, // Salva o código
                 currentLocation: 'Cliente',
-                history: { create: { action: 'INSTALACAO', description: `Instalado em ${clientName} (${address})`, location: 'Cliente', technician: techConnect } }
+                history: { create: { action: 'INSTALACAO', description: `Instalado em Cód: ${client} (${address})`, location: 'Cliente', technician: techConnect } }
               }
             });
          }
       }
-      await tx.auditLog.create({ data: { userId: req.userId, action: 'APROVAR_INSTALACAO', resource: 'Instalação', details: `Aprovou instalação para ${clientName}` } });
+      await tx.auditLog.create({ data: { userId: req.userId, action: 'APROVAR_INSTALACAO', resource: 'Instalação', details: `Aprovou instalação para Cód: ${client}` } });
     }
 
     await tx.pendingRequest.update({ where: { id: requestId }, data: { status: 'APPROVED', adminNotes } });
@@ -1626,6 +1629,103 @@ app.post("/api/admin/restore", authenticate, async (req, res) => {
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "Erro ao restaurar: " + e.message });
+  }
+});
+
+// --- ROTAS DE CONTROLE GERAL (FROTA/FERRAMENTAS) ---
+
+app.get("/api/general/assets", authenticate, async (req, res) => {
+  try {
+    const { type } = req.query; // veiculo, ferramenta, epi
+    const where = { isConsumable: false }; // Base
+    
+    if (type === 'veiculo') where.type = 'veiculo';
+    else if (type === 'ferramenta') where.type = 'ferramenta';
+    else if (type === 'epi') where.type = 'epi';
+    else where.type = { in: ['veiculo', 'ferramenta', 'epi', 'escada'] };
+
+    const items = await prisma.item.findMany({
+      where,
+      orderBy: { brand: 'asc' }
+    });
+    
+    res.json(items.map(mapItemToFront));
+  } catch (e) {
+    res.status(500).json({ error: "Erro ao buscar ativos gerais" });
+  }
+});
+
+app.post("/api/general/inspection", authenticate, async (req, res) => {
+  try {
+    const { itemId, checks, obs, photo } = req.body;
+    
+    // Formata o checklist para texto legível no histórico
+    const checkSummary = Object.entries(checks)
+      .map(([k, v]) => `${k}: ${v === 'ok' ? '✅' : '⚠️'}`)
+      .join(' | ');
+
+    const description = `VISTORIA SEMANAL. ${checkSummary}. Obs: ${obs}`;
+
+    // Salva no histórico do item
+    await prisma.history.create({
+      data: {
+        itemId: Number(itemId),
+        action: "VISTORIA",
+        description: description,
+        location: "Base",
+        userId: req.userId
+      }
+    });
+
+    // Se houver foto ou dados críticos, salva log de auditoria também
+    if (photo || Object.values(checks).includes('bad')) {
+      await logAudit(req.userId, 'VISTORIA', 'Veículo', `Vistoria com apontamentos no item ID ${itemId}. Obs: ${obs}`);
+    }
+
+    res.json({ success: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Erro ao salvar vistoria" });
+  }
+});
+
+app.post("/api/general/conference", authenticate, async (req, res) => {
+  try {
+    const { technician, itemsOk, itemsMissing, obs, photos, signature } = req.body;
+    
+    const description = `CONFERÊNCIA DE MATERIAIS. Técnico: ${technician}. Itens OK: ${itemsOk.length}. Ausentes: ${itemsMissing.length}. Obs: ${obs || 'Sem obs'}. [Fotos: ${photos?.length || 0}, Assinatura: ${signature ? 'Sim' : 'Não'}]`;
+
+    // Salva os dados completos em PendingRequest (como um registro histórico)
+    await prisma.pendingRequest.create({
+      data: {
+        type: 'CONFERENCE',
+        status: 'APPROVED', // Já nasce aprovado pois é um registro
+        data: JSON.stringify({ technician, itemsOk, itemsMissing, obs, photos, signature, date: new Date() }),
+        userId: req.userId
+      }
+    });
+
+    // Log de auditoria global
+    await logAudit(req.userId, 'CONFERENCIA', 'Geral', description);
+
+    res.json({ success: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Erro ao salvar conferência" });
+  }
+});
+
+app.get("/api/general/conferences", authenticate, async (req, res) => {
+  try {
+    const conferences = await prisma.pendingRequest.findMany({
+      where: { type: 'CONFERENCE' },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+      include: { user: { select: { name: true } } }
+    });
+    res.json(conferences);
+  } catch (e) {
+    res.status(500).json({ error: "Erro ao buscar conferências" });
   }
 });
 

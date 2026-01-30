@@ -7,6 +7,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import Login from './pages/Login';
 import TechLogin from './pages/TechLogin';
 import TechDashboard from './pages/TechDashboard';
+import GeneralControlLogin from './pages/GeneralControlLogin';
+import GeneralControlDashboard from './pages/GeneralControlDashboard';
 import Dashboard from './pages/Dashboard';
 import Inventory from './pages/Inventory';
 import NewItem from './pages/NewItem';
@@ -37,6 +39,8 @@ export default function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/tech-login" element={<TechLogin />} />
           <Route path="/tech-dashboard" element={<PrivateRoute><TechDashboard /></PrivateRoute>} />
+          <Route path="/general-login" element={<GeneralControlLogin />} />
+          <Route path="/general-dashboard" element={<PrivateRoute><GeneralControlDashboard /></PrivateRoute>} />
           
           <Route path="/" element={<PrivateRoute><Layout><Dashboard /></Layout></PrivateRoute>} />
           <Route path="/inventory" element={<PrivateRoute><Layout><Inventory /></Layout></PrivateRoute>} />

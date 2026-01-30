@@ -295,7 +295,7 @@ export default function ImportCSV() {
                 <thead className="bg-gray-100 text-gray-700 font-bold text-xs uppercase sticky top-0">
                   <tr>
                     <th className="p-3">Serial</th>
-                    <th className="p-3">Cliente Final</th>
+                    <th className="p-3">Cód. Cliente</th>
                     <th className="p-3">Status Calculado</th>
                     <th className="p-3">Data Evento</th>
                   </tr>

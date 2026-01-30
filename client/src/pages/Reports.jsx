@@ -114,7 +114,7 @@ export default function Reports() {
           item.name?.toLowerCase().includes(term) ||
           item.serial?.toLowerCase().includes(term) ||
           item.patrimony?.toLowerCase().includes(term) ||
-          item.clientName?.toLowerCase().includes(term)
+          item.client?.toLowerCase().includes(term)
         );
       }
       return true;
@@ -338,7 +338,7 @@ export default function Reports() {
               </div>
             }
             onClick={() => {
-              handlePrint('Relatorio_Estoque', ['Nome','Patrimonio','Serial','Status','Cliente', 'Entrada'], filteredItems.map(i=>[i.name, i.patrimony, i.serial, i.status.toUpperCase().replace('_',' '), i.clientName || '-', new Date(i.createdAt).toLocaleDateString()]))
+              handlePrint('Relatorio_Estoque', ['Nome','Patrimonio','Serial','Status','Cód. Cliente', 'Entrada'], filteredItems.map(i=>[i.name, i.patrimony, i.serial, i.status.toUpperCase().replace('_',' '), i.client || '-', new Date(i.createdAt).toLocaleDateString()]))
             }}
           />
 
@@ -380,13 +380,13 @@ export default function Reports() {
               const summary = `Total Geral (Risco/Ativo): ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totals.total)}`;
               
               handlePrint('Relatorio_Financeiro', 
-                ['Nome', 'Patrimonio', 'Status', 'Valor (R$)', 'Cliente'], 
+                ['Nome', 'Patrimonio', 'Status', 'Valor (R$)', 'Cód. Cliente'], 
                 filteredItems.map(i => [
                   i.name, 
                   i.patrimony, 
                   i.status.toUpperCase(), 
                   new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(i.value || 0),
-                  i.clientName || '-'
+                  i.client || '-'
                 ]),
                 summary
               );

@@ -38,7 +38,7 @@ const StatItem = ({ title, value, icon: Icon, gradient, subtext, trend }) => (
     <div className="mt-6">
       <h3 className="text-4xl lg:text-5xl font-bold text-slate-800 tracking-tighter mb-1">{value}</h3>
       <p className="text-sm font-bold text-slate-500 uppercase tracking-wide">{title}</p>
-      {subtext && <p className="text-xs text-slate-400 mt-2 font-medium flex items-center gap-1"><div className="w-1.5 h-1.5 rounded-full bg-slate-300"></div> {subtext}</p>}
+      {subtext && <p className="text-xs text-slate-400 mt-2 font-medium flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-slate-300"></span> {subtext}</p>}
     </div>
 
     {/* Decorative Background Icon */}
