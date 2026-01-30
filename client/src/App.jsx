@@ -16,6 +16,7 @@ import Users from './pages/Users';
 import ImportCSV from './pages/ImportCSV';
 import Reports from './pages/Reports'; // NOVA TELA
 import Notifications from './pages/Notifications'; // NOVA TELA
+import CreditControl from './pages/CreditControl'; // NOVA TELA
 import Settings from './pages/Settings';
 import ComingSoon from './pages/ComingSoon';
 import Layout from './components/Layout';
@@ -48,6 +49,7 @@ export default function App() {
           <Route path="/users" element={<PrivateRoute><Layout><Users /></Layout></PrivateRoute>} />
           <Route path="/import" element={<PrivateRoute><Layout><ImportCSV /></Layout></PrivateRoute>} />
           <Route path="/notifications" element={<PrivateRoute><Layout><Notifications /></Layout></PrivateRoute>} />
+          <Route path="/credit-control" element={<PrivateRoute><Layout><CreditControl /></Layout></PrivateRoute>} />
           <Route path="/settings" element={<PrivateRoute><Layout><Settings /></Layout></PrivateRoute>} />
           
           {/* Nova Rota de Relatórios */}

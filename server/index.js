@@ -730,6 +730,9 @@ app.put("/api/items/:id", authenticate, async (req, res) => {
         assetTag: data.patrimony, // front chama de patrimony
         mac: data.mac,
         value: Number(data.value) || 0,
+        status: data.status,
+        currentLocation: data.location || data.currentLocation,
+        city: data.city,
         currentHolder: data.client || data.clientName, // Atualiza o cliente (código) se enviado
         observations: data.observations,
         initialAmount: data.initialAmount !== undefined ? Number(data.initialAmount) : undefined,
@@ -1726,6 +1729,71 @@ app.get("/api/general/conferences", authenticate, async (req, res) => {
     res.json(conferences);
   } catch (e) {
     res.status(500).json({ error: "Erro ao buscar conferências" });
+  }
+});
+
+// --- ROTAS DE CONTROLE DE NEGATIVAÇÕES (CREDIT RECORD) ---
+
+app.get("/api/credit-records", authenticate, async (req, res) => {
+  try {
+    const { status } = req.query;
+    const where = {};
+    // Filtro de status (se não for ALL)
+    if (status && status !== 'ALL') where.status = status;
+
+    const records = await prisma.creditRecord.findMany({
+      where,
+      orderBy: { registerDate: 'desc' },
+      include: { user: { select: { name: true } } }
+    });
+    res.json(records);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Erro ao buscar registros de crédito." });
+  }
+});
+
+app.post("/api/credit-records", authenticate, async (req, res) => {
+  try {
+    const data = req.body;
+    const record = await prisma.creditRecord.create({
+      data: {
+        clientName: data.clientName,
+        clientCode: data.clientCode,
+        document: data.document,
+        contractId: data.contractId,
+        amount: Number(data.amount),
+        platform: data.platform || 'SERASA',
+        status: 'PENDING', // Inicia como Pendente/Pré-negativação
+        notes: data.notes,
+        dueDate: new Date(data.dueDate),
+        userId: req.userId
+      }
+    });
+    await logAudit(req.userId, 'CRIAR', 'Negativação', `Registrou dívida: ${data.clientName} (${data.amount})`);
+    res.json(record);
+  } catch (e) {
+    res.status(500).json({ error: "Erro ao criar registro." });
+  }
+});
+
+app.put("/api/credit-records/:id", authenticate, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, notes, evidenceUrl } = req.body;
+    const updateData = { status, notes, evidenceUrl };
+    
+    if (status === 'CLEARED') updateData.clearedDate = new Date();
+
+    const record = await prisma.creditRecord.update({
+      where: { id: Number(id) },
+      data: updateData
+    });
+    
+    await logAudit(req.userId, 'ATUALIZAR', 'Negativação', `Atualizou status ID ${id} para ${status}`);
+    res.json(record);
+  } catch (e) {
+    res.status(500).json({ error: "Erro ao atualizar registro." });
   }
 });
 

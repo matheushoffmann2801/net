@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Server, User, Box, AlertTriangle, Package, Activity, TrendingUp, Zap, BarChart3, Calendar, ArrowUpRight, PieChart, Layers, Wifi, Bell
+  Server, User, Box, AlertTriangle, Package, Activity, TrendingUp, Zap, BarChart3, Calendar, ArrowUpRight, PieChart, Layers, Wifi, Bell, AlertOctagon
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
@@ -241,7 +241,7 @@ export default function Dashboard() {
           </BentoCard>
 
           {/* 7. Quick Actions / Links */}
-          <BentoCard className="md:col-span-1 lg:col-span-2 flex flex-col justify-center bg-gradient-to-br from-blue-50 to-white" delay={600} noGlass>
+          <BentoCard className="md:col-span-1 lg:col-span-2 flex flex-col justify-center bg-gradient-to-br from-slate-50 to-white" delay={600} noGlass>
              <div className="flex items-center gap-4 mb-6">
                 <div className="p-4 bg-white text-blue-600 rounded-2xl shadow-sm border border-blue-100">
                     <Package size={28} />
@@ -251,7 +251,7 @@ export default function Dashboard() {
                     <p className="text-sm text-slate-500 font-medium">Acessos frequentes</p>
                 </div>
              </div>
-             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full">
+             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full">
                 <button onClick={() => navigate('/inventory')} className="p-5 bg-white border border-slate-200 rounded-2xl hover:border-blue-400 hover:ring-4 hover:ring-blue-50 hover:shadow-xl hover:-translate-y-1 transition-all text-left group relative overflow-hidden">
                     <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity"><Layers size={80}/></div>
                     <span className="block text-xs font-bold text-slate-400 uppercase mb-2 tracking-wider">Visualizar</span>
@@ -261,6 +261,11 @@ export default function Dashboard() {
                     <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity"><BarChart3 size={80}/></div>
                     <span className="block text-xs font-bold text-slate-400 uppercase mb-2 tracking-wider">Gerar</span>
                     <span className="font-bold text-slate-700 text-lg group-hover:text-purple-600 flex items-center gap-2">Relatórios <ArrowUpRight size={18}/></span>
+                </button>
+                <button onClick={() => navigate('/credit-control')} className="p-5 bg-white border border-slate-200 rounded-2xl hover:border-red-400 hover:ring-4 hover:ring-red-50 hover:shadow-xl hover:-translate-y-1 transition-all text-left group relative overflow-hidden">
+                    <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity"><AlertOctagon size={80}/></div>
+                    <span className="block text-xs font-bold text-slate-400 uppercase mb-2 tracking-wider">Financeiro</span>
+                    <span className="font-bold text-slate-700 text-lg group-hover:text-red-600 flex items-center gap-2">Inadimplência <ArrowUpRight size={18}/></span>
                 </button>
              </div>
           </BentoCard>
